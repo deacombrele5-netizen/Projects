@@ -2,16 +2,16 @@ package net.zadrothub.zhimpact.client;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.settings.KeyBinding;
-import net.minecraft.client.util.InputMappings;
 import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.api.distmarker.Dist;
+import org.lwjgl.glfw.GLFW;
 
 @Mod.EventBusSubscriber(modid = "zhimpact", value = Dist.CLIENT)
 public final class ClientEvents {
     public static final KeyBinding OPEN_MENU = new KeyBinding(
-            "key.zhimpact.open_menu", InputMappings.getInputByName("key.keyboard.u"),
+            "key.zhimpact.open_menu", GLFW.GLFW_KEY_U,
             "key.categories.zhimpact");
 
     @SubscribeEvent
