@@ -7,7 +7,7 @@ import java.util.Map;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
-import net.minecraft.block.LogBlock;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.entity.merchant.villager.VillagerEntity;
 import net.minecraft.entity.item.ItemEntity;
 import net.minecraft.item.ItemStack;
@@ -134,7 +134,7 @@ public final class CityManager {
                 WorkerInventory inventory=WorkerInventory.get(villager);
                 storedItems+=inventory.countItems();
                 if(villager.getMainHandItem().isEmpty()) {
-                    villager.setItemSlot(net.minecraft.entity.EquipmentSlotType.MAINHAND,
+                    villager.setItemSlot(net.minecraft.inventory.EquipmentSlotType.MAINHAND,
                         new ItemStack(Items.IRON_AXE));
                 }
                 BlockPos target=findResource(world,villager.blockPosition());
@@ -168,7 +168,7 @@ public final class CityManager {
         BlockPos findResource(ServerWorld world,BlockPos around) {
             for(BlockPos pos:BlockPos.betweenClosed(around.offset(-5,-2,-5),around.offset(5,3,5))) {
                 BlockState state=world.getBlockState(pos);
-                if(state.getBlock() instanceof LogBlock) return pos.immutable();
+                if(state.is(BlockTags.LOGS)) return pos.immutable();
                 if(state.getMaterial()==net.minecraft.block.material.Material.STONE
                     && pos.getY()>=origin.getY()-1
                     && Math.abs(pos.getX()-origin.getX())>20
