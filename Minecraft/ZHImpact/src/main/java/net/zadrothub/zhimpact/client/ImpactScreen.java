@@ -1,9 +1,9 @@
 package net.zadrothub.zhimpact.client;
 
+import com.mojang.blaze3d.matrix.MatrixStack;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.gui.widget.button.Button;
-import net.minecraft.util.text.StringTextComponent;
 import net.minecraft.util.text.TranslationTextComponent;
 import net.zadrothub.zhimpact.ImpactConfig;
 
@@ -12,7 +12,7 @@ import java.util.Locale;
 public class ImpactScreen extends Screen {
     private double multiplier;
     private TextFieldWidget multiplierInput;
-    private String status = "Ready";
+    private String status = "screen.zhimpact.ready";
 
     public ImpactScreen() {
         super(new TranslationTextComponent("screen.zhimpact.title"));
@@ -30,7 +30,7 @@ public class ImpactScreen extends Screen {
         }));
 
         multiplierInput = new TextFieldWidget(this.font, cx - 100, top + 28, 200, 20,
-                new TranslationTextComponent("screen.zhimpact.title"));
+                new TranslationTextComponent("screen.zhimpact.multiplier"));
         multiplierInput.setMaxStringLength(32);
         multiplierInput.setText(String.format(Locale.ROOT, "%.6g", multiplier));
         this.addButton(multiplierInput);
@@ -79,22 +79,25 @@ public class ImpactScreen extends Screen {
         status = "screen.zhimpact.preset_applied";
     }
 
-    private StringTextComponent enabledText() {
-        return new TranslationTextComponent("screen.zhimpact.toggle", ImpactConfig.ENABLED.get() ? "ON" : "OFF");
+    private TranslationTextComponent enabledText() {
+        return new TranslationTextComponent("screen.zhimpact.toggle",
+                new TranslationTextComponent(ImpactConfig.ENABLED.get()
+                        ? "screen.zhimpact.on" : "screen.zhimpact.off"));
     }
 
     @Override
-    public void render(int mouseX, int mouseY, float partialTicks) {
-        this.renderBackground();
-        drawCenteredString(this.font, this.title, this.width / 2,
+    public void render(MatrixStack matrixStack, int mouseX, int mouseY, float partialTicks) {
+        this.renderBackground(matrixStack);
+        drawCenteredString(matrixStack, this.font, this.title, this.width / 2,
                 this.height / 2 - 112, 0xFFFFFF);
-        drawCenteredString(this.font, "Forge 1.16.5 | U / Г", this.width / 2,
-                this.height / 2 - 98, 0xA0A0A0);
-        drawCenteredString(this.font, new TranslationTextComponent("screen.zhimpact.range"),
+        drawCenteredString(matrixStack, this.font, "Forge 1.16.5 | U",
+                this.width / 2, this.height / 2 - 98, 0xA0A0A0);
+        drawCenteredString(matrixStack, this.font,
+                new TranslationTextComponent("screen.zhimpact.range"),
                 this.width / 2, this.height / 2 + 65, 0xA0A0A0);
-        drawCenteredString(this.font, new TranslationTextComponent(status), this.width / 2,
-                this.height / 2 + 78, 0x55FF55);
-        super.render(mouseX, mouseY, partialTicks);
+        drawCenteredString(matrixStack, this.font, new TranslationTextComponent(status),
+                this.width / 2, this.height / 2 + 78, 0x55FF55);
+        super.render(matrixStack, mouseX, mouseY, partialTicks);
     }
 
     @Override
