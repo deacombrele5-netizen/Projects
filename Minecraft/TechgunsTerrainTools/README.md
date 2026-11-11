@@ -1,36 +1,39 @@
-# Terrain Tools — Minecraft Forge 1.12.2
+# Terrain Tools
 
-A standalone mining utility mod for Forge 1.12.2.
+A lightweight mining utility for Minecraft Forge 1.12.2.
 
 ## Features
 
-- Adds the **Terrain Pickaxe** to the Tools creative tab.
-- Press **G** to toggle 3×3 area mining. The key can be rebound in Controls.
-- The 3×3 plane follows the direction the player is facing.
-- Only the special pickaxe is affected; normal tools behave normally.
-- Skips unloaded positions, tile entities (for example chests and machines), unbreakable blocks, and blocks with hardness above 4.
-- Extra blocks are harvested through the normal server interaction manager, preserving vanilla/Forge block-break checks, drops, and tool durability.
-- Russian and English language strings.
+- Adds the Terrain Pickaxe to the Tools creative tab.
+- Press **G** to toggle 3×3 area mining. The key can be changed in **Options → Controls**.
+- The mining area follows the player's horizontal facing direction.
+- The feature only applies while using the Terrain Pickaxe.
+- Skips unloaded positions, tile entities, unbreakable blocks, and blocks with hardness above 4.
+- Uses the server's normal block-harvesting process for extra blocks, including Forge break events, permissions, drops, and tool durability.
+- Includes English and Russian language files.
 
 ## Requirements
 
 - Minecraft 1.12.2
 - Minecraft Forge 14.23.5.2860
-- Java 8 (for building)
+- Java 8 for compiling
 
 ## Build
 
-From this directory run:
+Run this command from the project directory:
 
 ```sh
-gradle setupDecompWorkspace --no-daemon
 gradle build --no-daemon
 ```
 
-The compiled JAR is created in `build/libs/`.
+The JAR is generated in `build/libs/`.
 
 ## Install
 
-Copy the resulting JAR into the Minecraft instance's `mods` folder. Install Forge 1.12.2 first.
+1. Install Minecraft Forge 1.12.2.
+2. Copy the Terrain Tools JAR into the instance's `mods` folder.
+3. Launch the game.
 
-This mod is a mining utility. It does not add explosive or weapon behavior.
+## Compatibility
+
+Terrain Tools is a standalone mining utility. It does not require Techguns and does not add weapon or explosive functionality.
