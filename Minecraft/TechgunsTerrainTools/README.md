@@ -1,17 +1,36 @@
 # Terrain Tools — Minecraft Forge 1.12.2
 
-Standalone add-on: a special **Terrain Pickaxe** with optional 3×3 area mining.
+A standalone mining utility mod for Forge 1.12.2.
 
-- Press **G** (rebindable in Controls) to toggle the mode.
-- Only affects the special pickaxe; ordinary tools are unchanged.
-- Mines a 3×3 plane aligned to the player's horizontal facing.
-- Skips unbreakable blocks, blocks above hardness 4.0, unloaded positions, and tile entities such as chests/machines.
-- Additional blocks consume pickaxe durability.
-- Russian and English localization.
+## Features
+
+- Adds the **Terrain Pickaxe** to the Tools creative tab.
+- Press **G** to toggle 3×3 area mining. The key can be rebound in Controls.
+- The 3×3 plane follows the direction the player is facing.
+- Only the special pickaxe is affected; normal tools behave normally.
+- Skips unloaded positions, tile entities (for example chests and machines), unbreakable blocks, and blocks with hardness above 4.
+- Extra blocks are harvested through the normal server interaction manager, preserving vanilla/Forge block-break checks, drops, and tool durability.
+- Russian and English language strings.
+
+## Requirements
+
+- Minecraft 1.12.2
+- Minecraft Forge 14.23.5.2860
+- Java 8 (for building)
 
 ## Build
-Requires JDK 8 and Gradle 4.10.x. Run `gradle setupDecompWorkspace` then `gradle build`. JAR: `build/libs/`.
 
-Install the JAR in the Minecraft 1.12.2 Forge `mods` folder. The item appears in the Tools creative tab.
+From this directory run:
 
-This is a mining utility and does not add explosive or weapon behavior.
+```sh
+gradle setupDecompWorkspace --no-daemon
+gradle build --no-daemon
+```
+
+The compiled JAR is created in `build/libs/`.
+
+## Install
+
+Copy the resulting JAR into the Minecraft instance's `mods` folder. Install Forge 1.12.2 first.
+
+This mod is a mining utility. It does not add explosive or weapon behavior.
