@@ -10,10 +10,13 @@ import net.minecraftforge.fml.common.Mod;
 @Mod.EventBusSubscriber(modid = ZHImpact.MOD_ID)
 public final class DamageController {
     private static final float MAX_APPLIED_DAMAGE = 1.0E9F;
+    private static final ThreadLocal<Boolean> REFLECTING =
+            ThreadLocal.withInitial(() -> Boolean.FALSE);
 
     @SubscribeEvent
     public static void onLivingHurt(LivingHurtEvent event) {
-        if (event.getEntityLiving().world.isRemote || !ImpactConfig.ENABLED.get()) return;
+        if (event.getEntityLiving().world.isRemote || REFLECTING.get()
+                || !ImpactConfig.ENABLED.get()) return;
 
         double multiplier = ImpactConfig.MULTIPLIER.get();
         if (multiplier == 0.0D) {
@@ -35,7 +38,12 @@ public final class DamageController {
                     Math.abs((double) event.getAmount() * multiplier), MAX_APPLIED_DAMAGE);
             event.setCanceled(true);
             if (reflected > 0.0F && attacker.isAlive()) {
-                attacker.attackEntityFrom(DamageSource.GENERIC, reflected);
+                REFLECTING.set(Boolean.TRUE);
+                try {
+                    attacker.attackEntityFrom(DamageSource.GENERIC, reflected);
+                } finally {
+                    REFLECTING.set(Boolean.FALSE);
+                }
             }
         } else {
             event.setCanceled(true);
