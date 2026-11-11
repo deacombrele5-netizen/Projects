@@ -1,0 +1,36 @@
+buildscript {
+    repositories { maven { url = 'https://maven.minecraftforge.net' }; mavenCentral() }
+    dependencies { classpath 'net.minecraftforge.gradle:ForgeGradle:4.1.+' }
+}
+apply plugin: 'net.minecraftforge.gradle'
+apply plugin: 'eclipse'
+apply plugin: 'maven-publish'
+
+version = '0.1.0'
+group = 'net.zadrothub.zhimpact'
+archivesBaseName = 'ZHImpact'
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(8)
+
+minecraft {
+    mappings channel: 'snapshot', version: '20210309-1.16.5'
+    runs {
+        client { workingDirectory project.file('run'); property 'forge.logging.console.level', 'debug'; mods { zhimpact { source sourceSets.main } } }
+        server { workingDirectory project.file('run-server'); property 'forge.logging.console.level', 'debug'; mods { zhimpact { source sourceSets.main } } }
+    }
+}
+
+dependencies { minecraft 'net.minecraftforge:forge:1.16.5-36.2.39' }
+
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+jar {
+    manifest {
+        attributes([
+            'Specification-Title': 'ZHImpact',
+            'Specification-Vendor': 'ZadrotHUB',
+            'Specification-Version': '1',
+            'Implementation-Title': project.name,
+            'Implementation-Version': project.version
+        ])
+    }
+}

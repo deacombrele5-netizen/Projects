@@ -1,0 +1,25 @@
+modLoader="javafml"
+loaderVersion="[36,)"
+license="MIT"
+
+[[mods]]
+modId="zhimpact"
+version="0.1.0"
+displayName="ZHImpact"
+authors="ZadrotHUB"
+description='''Impact damage laboratory for singleplayer and servers you administer.
+Damage changes are calculated by the authoritative game server. This mod does not bypass anticheat or server validation.'''
+
+[[dependencies.zhimpact]]
+modId="forge"
+mandatory=true
+versionRange="[36.2.39,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.zhimpact]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.16.5]"
+ordering="NONE"
+side="BOTH"

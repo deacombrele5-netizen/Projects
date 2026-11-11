@@ -1,0 +1,28 @@
+# ZHImpact — Forge 1.16.5
+
+A configurable damage laboratory for singleplayer worlds and Forge servers you own or administer.
+
+## Features
+- Forge 1.16.5 / Java 8.
+- Classic Minecraft-style menu opened with **U** (the physical key works as U/Г in either keyboard layout).
+- Enable/disable switch.
+- Positive multiplier, zero-damage mode, and negative reflection mode.
+- Common server config: `config/zhimpact-common.toml`.
+- Russian and English keybind names.
+
+## Important multiplayer behavior
+Damage is changed by the authoritative logical server. Installing only the client mod does not force Envy World, Dead Rate, Really World, or any other remote server to accept modified damage. The server owner must install and configure the mod. This project does not include anticheat bypasses, packet spoofing, or stealth features.
+
+## Build
+Use Java 8 and Gradle 6.8.3 (or the Forge 1.16.5 MDK wrapper):
+```sh
+gradle build
+```
+The jar is created in `build/libs/`.
+
+## Configuration
+Edit `config/zhimpact-common.toml` on the server:
+- `enabled = true`
+- `multiplier = 1.0`
+
+The multiplier is finite and clamped to ±1,000,000,000. A literal infinity is intentionally not supported because it can break health and damage calculations.
