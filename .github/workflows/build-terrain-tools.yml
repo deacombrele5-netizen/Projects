@@ -1,0 +1,38 @@
+name: Build Terrain Tools (Forge 1.12.2)
+
+on:
+  push:
+    paths:
+      - 'Minecraft/TechgunsTerrainTools/**'
+      - '.github/workflows/build-terrain-tools.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: Minecraft/TechgunsTerrainTools
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '4.10.3'
+      - name: Prepare Forge workspace
+        run: gradle setupDecompWorkspace --no-daemon
+      - name: Build mod
+        run: gradle build --no-daemon
+      - name: Upload mod JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: TerrainTools-Forge-1.12.2
+          path: Minecraft/TechgunsTerrainTools/build/libs/*.jar
+          if-no-files-found: error
+          retention-days: 14
