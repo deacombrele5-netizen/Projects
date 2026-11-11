@@ -11,7 +11,7 @@ import net.minecraftforge.api.distmarker.Dist;
 @Mod.EventBusSubscriber(modid = "zhimpact", value = Dist.CLIENT)
 public final class ClientEvents {
     public static final KeyBinding OPEN_MENU = new KeyBinding(
-            "key.zhimpact.open_menu", InputMappings.getKey("key.keyboard.u"),
+            "key.zhimpact.open_menu", InputMappings.getInputByName("key.keyboard.u"),
             "key.categories.zhimpact");
 
     @SubscribeEvent
