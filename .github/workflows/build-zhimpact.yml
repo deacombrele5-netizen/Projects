@@ -1,0 +1,33 @@
+name: Build ZHImpact
+on:
+  push:
+    branches:
+      - zhimpact-forge-1.16.5
+    paths:
+      - 'Minecraft/ZHImpact/**'
+      - '.github/workflows/build-zhimpact.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '6.8.3'
+      - name: Build Forge mod
+        working-directory: Minecraft/ZHImpact
+        run: gradle build --no-daemon
+      - name: Upload mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZHImpact-Forge-1.16.5
+          path: Minecraft/ZHImpact/build/libs/*.jar
