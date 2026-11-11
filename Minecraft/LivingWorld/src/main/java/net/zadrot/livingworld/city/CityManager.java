@@ -7,19 +7,15 @@ import java.util.Map;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
-import net.minecraft.entity.Entity;
+import net.minecraft.block.LogBlock;
 import net.minecraft.entity.merchant.villager.VillagerEntity;
 import net.minecraft.entity.item.ItemEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
-import net.minecraft.util.Direction;
-import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.vector.Vector3d;
-import net.minecraft.world.World;
+import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.world.server.ServerWorld;
 import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.registries.ForgeRegistries;
 
 public final class CityManager {
     private static final Map<ServerWorld, Project> PROJECTS = new HashMap<ServerWorld, Project>();
@@ -31,15 +27,16 @@ public final class CityManager {
     public static void stop(ServerWorld world) { PROJECTS.remove(world); }
     public static String status(ServerWorld world) {
         Project p = PROJECTS.get(world);
-        return p == null ? "Living World: no active city project. Use /lw start." :
-            "Living World: " + p.label + " | stage " + p.stage + " | blocks " + p.cursor + "/" + p.blocks.size();
+        if (p == null) return "Living World: no active city project. Use /lw start.";
+        return "Living World: " + p.label + " | stage " + (p.stage + 1) + "/4 | blocks " + p.cursor + "/" + p.blocks.size()
+            + " | workers " + p.workers + " | stored items " + p.storedItems;
     }
 
     public static void onWorldTick(TickEvent.WorldTickEvent event) {
         if (event.phase != TickEvent.Phase.END || !(event.world instanceof ServerWorld)) return;
         ServerWorld world = (ServerWorld) event.world;
         Project p = PROJECTS.get(world);
-        if (p == null || world.getGameTime() % 2 != 0) return;
+        if (p == null || p.complete || world.getGameTime() % 2 != 0) return;
         p.workVillagers(world);
         int placed = 0;
         while (placed < BLOCKS_PER_TICK && p.cursor < p.blocks.size()) {
@@ -51,23 +48,27 @@ public final class CityManager {
         if (p.cursor >= p.blocks.size()) {
             p.stage++;
             if (p.stage < 4) p.planNextStage();
-            else { p.label = "City foundation complete"; }
+            else {
+                p.complete = true;
+                p.label = "Initial city plan complete";
+            }
         }
     }
 
     private static final class Project {
         final BlockPos origin;
         final List<BuildBlock> blocks = new ArrayList<BuildBlock>();
-        int cursor = 0, stage = 0;
+        int cursor = 0, stage = 0, workers = 0, storedItems = 0;
         long lastVillagerWork = 0;
-        String label = "Planning roads and first buildings";
+        boolean complete = false;
+        String label = "Planning";
         Project(BlockPos origin) { this.origin = origin; planNextStage(); }
 
         void planNextStage() {
             blocks.clear(); cursor = 0;
             if (stage == 0) { label = "Roads and sidewalks"; planRoads(); }
             else if (stage == 1) { label = "Homes and town square"; planHomes(); }
-            else if (stage == 2) { label = "Civic centre and shops"; planCivic(); }
+            else if (stage == 2) { label = "Civic centre, shops and pool"; planCivic(); }
             else if (stage == 3) { label = "High-rise landmark"; planTower(); }
         }
         void add(int x, int y, int z, Block block) {
@@ -122,20 +123,78 @@ public final class CityManager {
             building(0,26,17,17,32,Blocks.GRAY_CONCRETE,Blocks.LIGHT_BLUE_STAINED_GLASS,true);
             for(int y=34;y<=38;y++) fill(-2,y,24,2,y,28,Blocks.QUARTZ_BLOCK);
         }
+
         void workVillagers(ServerWorld world) {
-            if(world.getGameTime()-lastVillagerWork<40) return;
+            if(world.getGameTime()-lastVillagerWork<20) return;
             lastVillagerWork=world.getGameTime();
-            for(VillagerEntity v:world.getEntitiesOfClass(VillagerEntity.class,
-                    new net.minecraft.util.math.AxisAlignedBB(origin).inflate(48), e->!e.isBaby())) {
-                if(v.getMainHandItem().isEmpty()) {
-                    v.setItemSlot(net.minecraft.entity.EquipmentSlotType.MAINHAND,
-                        new ItemStack(v.getRandom().nextBoolean()?Items.IRON_PICKAXE:Items.IRON_AXE));
+            workers=0; storedItems=0;
+            AxisAlignedBB cityArea=new AxisAlignedBB(origin).inflate(48,24,48);
+            for(VillagerEntity villager:world.getEntitiesOfClass(VillagerEntity.class,cityArea,v->!v.isBaby())) {
+                workers++;
+                WorkerInventory inventory=WorkerInventory.get(villager);
+                storedItems+=inventory.countItems();
+                if(villager.getMainHandItem().isEmpty()) {
+                    villager.setItemSlot(net.minecraft.entity.EquipmentSlotType.MAINHAND,
+                        new ItemStack(Items.IRON_AXE));
                 }
-                v.swing(net.minecraft.util.Hand.MAIN_HAND);
-                if(v.distanceToSqr(origin.getX()+0.5,origin.getY(),origin.getZ()+0.5)>100)
-                    v.getNavigation().moveTo(origin.getX()+0.5,origin.getY(),origin.getZ()+0.5,0.7);
+                ItemStack tool=villager.getMainHandItem();
+                BlockPos target=findResource(world,villager.blockPosition());
+                if(target!=null) {
+                    double distance=villager.distanceToSqr(target.getX()+0.5,target.getY(),target.getZ()+0.5);
+                    if(distance>9.0) villager.getNavigation().moveTo(target.getX()+0.5,target.getY(),target.getZ()+0.5,0.8);
+                    else {
+                        villager.swing(net.minecraft.util.Hand.MAIN_HAND);
+                        if(world.getGameTime()%40==0 && world.destroyBlock(target,true,villager)) {
+                            for(ItemEntity drop:world.getEntitiesOfClass(ItemEntity.class,new AxisAlignedBB(target).inflate(2.5),e->true)) {
+                                inventory.insert(drop.getItem());
+                                drop.remove();
+                            }
+                        }
+                    }
+                } else {
+                    int offset=(int)(villager.getUUID().getLeastSignificantBits()%17L);
+                    BlockPos workSite=origin.offset(24+offset,0,(workers%2==0?22:-22));
+                    villager.getNavigation().moveTo(workSite.getX()+0.5,workSite.getY(),workSite.getZ()+0.5,0.65);
+                }
             }
         }
+        BlockPos findResource(ServerWorld world,BlockPos around) {
+            for(BlockPos pos:BlockPos.betweenClosed(around.offset(-5,-2,-5),around.offset(5,3,5))) {
+                BlockState state=world.getBlockState(pos);
+                if(state.getBlock() instanceof LogBlock) return pos.immutable();
+                if(state.getMaterial()==net.minecraft.block.material.Material.STONE
+                    && pos.getY()>=origin.getY()-1
+                    && Math.abs(pos.getX()-origin.getX())>20
+                    && Math.abs(pos.getZ()-origin.getZ())>20) return pos.immutable();
+            }
+            return null;
+        }
+    }
+
+    private static final class WorkerInventory {
+        private static final Map<java.util.UUID,WorkerInventory> DATA=new HashMap<java.util.UUID,WorkerInventory>();
+        private final List<ItemStack> items=new ArrayList<ItemStack>();
+        static WorkerInventory get(VillagerEntity villager) {
+            WorkerInventory data=DATA.get(villager.getUUID());
+            if(data==null) { data=new WorkerInventory(); DATA.put(villager.getUUID(),data); }
+            return data;
+        }
+        int insert(ItemStack incoming) {
+            if(incoming.isEmpty() || items.size()>=16) return 0;
+            int accepted=Math.min(incoming.getCount(),incoming.getMaxStackSize());
+            ItemStack copy=incoming.copy(); copy.setCount(accepted);
+            items.add(copy);
+            incoming.shrink(accepted);
+            return accepted;
+        }
+        int countItems() {
+            int total=0;
+            for(ItemStack stack:items) total+=stack.getCount();
+            return total;
+        }
+    }
+    public static boolean giveItem(VillagerEntity villager,ItemStack held) {
+        return WorkerInventory.get(villager).insert(held)>0;
     }
     private static final class BuildBlock {
         final BlockPos pos; final BlockState state;
