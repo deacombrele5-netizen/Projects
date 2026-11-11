@@ -1,8 +1,8 @@
 package net.zadrot.terraintools.network;
 
-import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.minecraftforge.fml.common.gameevent.PlayerEvent;
 
 /** Keeps the server-side toggle set free of players who have left the server. */
 @Mod.EventBusSubscriber(modid = "terraintools")
