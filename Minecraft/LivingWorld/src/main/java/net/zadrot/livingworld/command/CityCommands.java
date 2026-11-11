@@ -5,7 +5,6 @@ import net.minecraft.command.Commands;
 import net.minecraft.util.text.StringTextComponent;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.server.ServerWorld;
-import net.minecraftforge.server.permission.PermissionAPI;
 import net.zadrot.livingworld.city.CityManager;
 
 public final class CityCommands {
