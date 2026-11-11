@@ -1,12 +1,17 @@
 package net.zadrothub.zhimpact.client;
 
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.gui.widget.button.Button;
 import net.minecraft.util.text.StringTextComponent;
 import net.zadrothub.zhimpact.ImpactConfig;
 
+import java.util.Locale;
+
 public class ImpactScreen extends Screen {
     private double multiplier;
+    private TextFieldWidget multiplierInput;
+    private String status = "Ready";
 
     public ImpactScreen() {
         super(new StringTextComponent("ZHImpact"));
@@ -16,49 +21,78 @@ public class ImpactScreen extends Screen {
     @Override
     protected void init() {
         int cx = this.width / 2;
-        int top = this.height / 2 - 65;
+        int top = this.height / 2 - 88;
+
         this.addButton(new Button(cx - 100, top, 200, 20, enabledText(), button -> {
             ImpactConfig.ENABLED.set(!ImpactConfig.ENABLED.get());
             button.setMessage(enabledText());
         }));
-        this.addButton(new Button(cx - 100, top + 28, 200, 20, multiplierText(), button -> {
-            double[] presets = {0.0D, 0.25D, 1.0D, 2.0D, 10.0D, 100.0D,
-                    10000.0D, 1000000.0D, 1000000000.0D,
-                    -0.25D, -1.0D, -10.0D, -100.0D, -1000000.0D, -1000000000.0D};
-            int next = 0;
-            for (int i = 0; i < presets.length; i++) {
-                if (Double.compare(presets[i], multiplier) == 0) {
-                    next = (i + 1) % presets.length;
-                    break;
-                }
-            }
-            multiplier = presets[next];
-            ImpactConfig.MULTIPLIER.set(multiplier);
-            button.setMessage(multiplierText());
-        }));
-        this.addButton(new Button(cx - 100, top + 56, 200, 20,
-                new StringTextComponent("Config: config/zhimpact-common.toml"),
-                button -> button.setMessage(new StringTextComponent("Edit config/zhimpact-common.toml"))));
-        this.addButton(new Button(cx - 100, top + 88, 200, 20,
+
+        multiplierInput = new TextFieldWidget(this.font, cx - 100, top + 28, 200, 20,
+                new StringTextComponent("Damage multiplier"));
+        multiplierInput.setMaxStringLength(32);
+        multiplierInput.setText(String.format(Locale.ROOT, "%.6g", multiplier));
+        this.addButton(multiplierInput);
+
+        this.addButton(new Button(cx - 100, top + 54, 200, 20,
+                new StringTextComponent("Apply value"), button -> applyMultiplier()));
+
+        this.addButton(new Button(cx - 100, top + 82, 200, 20,
+                new StringTextComponent("Next preset"), button -> cyclePreset()));
+
+        this.addButton(new Button(cx - 100, top + 112, 200, 20,
                 new StringTextComponent("Done"), button -> this.onClose()));
+    }
+
+    private void applyMultiplier() {
+        try {
+            double parsed = Double.parseDouble(multiplierInput.getText().trim());
+            if (!Double.isFinite(parsed)) {
+                status = "Enter a finite number";
+                return;
+            }
+            multiplier = Math.max(-ImpactConfig.MAX_MULTIPLIER,
+                    Math.min(ImpactConfig.MAX_MULTIPLIER, parsed));
+            ImpactConfig.MULTIPLIER.set(multiplier);
+            multiplierInput.setText(String.format(Locale.ROOT, "%.6g", multiplier));
+            status = "Value applied";
+        } catch (NumberFormatException ex) {
+            status = "Invalid number";
+        }
+    }
+
+    private void cyclePreset() {
+        double[] presets = {0.0D, 0.25D, 1.0D, 2.0D, 10.0D, 100.0D,
+                10000.0D, 1000000.0D, 1000000000.0D,
+                -0.25D, -1.0D, -10.0D, -100.0D, -1000000.0D, -1000000000.0D};
+        int next = 0;
+        for (int i = 0; i < presets.length; i++) {
+            if (Double.compare(presets[i], multiplier) == 0) {
+                next = (i + 1) % presets.length;
+                break;
+            }
+        }
+        multiplier = presets[next];
+        ImpactConfig.MULTIPLIER.set(multiplier);
+        multiplierInput.setText(String.format(Locale.ROOT, "%.6g", multiplier));
+        status = "Preset applied";
     }
 
     private StringTextComponent enabledText() {
         return new StringTextComponent("Impact: " + (ImpactConfig.ENABLED.get() ? "ON" : "OFF"));
     }
 
-    private StringTextComponent multiplierText() {
-        return new StringTextComponent(String.format(java.util.Locale.ROOT,
-                "Damage multiplier: %.2f", multiplier));
-    }
-
     @Override
     public void render(int mouseX, int mouseY, float partialTicks) {
         this.renderBackground();
         drawCenteredString(this.font, this.title.getString(), this.width / 2,
-                this.height / 2 - 92, 0xFFFFFF);
+                this.height / 2 - 112, 0xFFFFFF);
         drawCenteredString(this.font, "Forge 1.16.5 | U / Г", this.width / 2,
-                this.height / 2 - 78, 0xA0A0A0);
+                this.height / 2 - 98, 0xA0A0A0);
+        drawCenteredString(this.font, "Range: -" + "1.0E9" + " to +1.0E9",
+                this.width / 2, this.height / 2 + 65, 0xA0A0A0);
+        drawCenteredString(this.font, status, this.width / 2,
+                this.height / 2 + 78, 0x55FF55);
         super.render(mouseX, mouseY, partialTicks);
     }
 
