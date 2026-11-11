@@ -1,1 +1,15 @@
-{"key.zhimpact.open_menu":"Открыть меню ZHImpact","key.categories.zhimpact":"ZHImpact"}
+{
+  "key.zhimpact.open_menu": "Открыть меню ZHImpact",
+  "key.categories.zhimpact": "ZHImpact",
+  "screen.zhimpact.title": "Лаборатория урона ZHImpact",
+  "screen.zhimpact.toggle": "Impact: %s",
+  "screen.zhimpact.apply": "Применить значение",
+  "screen.zhimpact.preset": "Следующий пресет",
+  "screen.zhimpact.done": "Готово",
+  "screen.zhimpact.range": "Диапазон: от -1.0E9 до +1.0E9",
+  "screen.zhimpact.ready": "Готово",
+  "screen.zhimpact.applied": "Значение применено",
+  "screen.zhimpact.invalid": "Неверное число",
+  "screen.zhimpact.finite": "Введите конечное число",
+  "screen.zhimpact.preset_applied": "Пресет применён"
+}
