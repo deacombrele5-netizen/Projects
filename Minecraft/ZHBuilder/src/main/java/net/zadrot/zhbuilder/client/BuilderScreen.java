@@ -18,6 +18,7 @@ public class BuilderScreen extends Screen {
         prompt.setMaxLength(500);
         prompt.setSuggestion("e.g. modern house with glass walls and a pool");
         this.addWidget(prompt);
+        prompt.setFocus(true);
         this.addButton(new net.minecraft.client.gui.widget.button.Button(center - 150, this.height / 2 + 24, 145, 20,
                 new StringTextComponent("Generate"), button -> send("/zhb generate " + prompt.getValue())));
         this.addButton(new net.minecraft.client.gui.widget.button.Button(center + 5, this.height / 2 + 24, 145, 20,
