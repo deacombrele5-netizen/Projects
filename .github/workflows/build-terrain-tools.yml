@@ -35,6 +35,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: TerrainTools-Forge-1.12.2
-          path: build/libs/*.jar
+          path: Minecraft/TechgunsTerrainTools/build/libs/*.jar
           if-no-files-found: error
           retention-days: 14
