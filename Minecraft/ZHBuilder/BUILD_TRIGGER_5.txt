@@ -1,0 +1,1 @@
+Rebuild trigger for ForgeGradle 5.1.69 / Gradle 7.3.3.
