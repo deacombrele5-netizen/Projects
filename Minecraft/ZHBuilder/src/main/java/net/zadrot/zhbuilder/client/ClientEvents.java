@@ -27,7 +27,7 @@ public final class ClientEvents {
         @SubscribeEvent
         public static void onKeyInput(InputEvent.KeyInputEvent event) {
             Minecraft minecraft = Minecraft.getInstance();
-            while (OPEN_MENU.isPressed()) {
+            while (OPEN_MENU.consumeClick()) {
                 if (minecraft.screen == null) minecraft.setScreen(new BuilderScreen());
             }
         }
