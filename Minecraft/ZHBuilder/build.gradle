@@ -4,7 +4,7 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath 'net.minecraftforge.gradle:ForgeGradle:4.1.+'
+        classpath 'net.minecraftforge.gradle:ForgeGradle:4.1.16'
     }
 }
 
@@ -38,4 +38,7 @@ dependencies {
     minecraft 'net.minecraftforge:forge:1.16.5-36.2.39'
 }
 
-repositories { mavenCentral() }
+repositories {
+    maven { url = 'https://maven.minecraftforge.net/' }
+    mavenCentral()
+}
