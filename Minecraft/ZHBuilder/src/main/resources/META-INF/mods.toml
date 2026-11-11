@@ -1,0 +1,25 @@
+modLoader="javafml"
+loaderVersion="[36,)"
+license="MIT"
+
+[[mods]]
+modId="zhbuilder"
+version="0.1.0"
+displayName="ZH Builder"
+description='''
+AI-assisted structure generation, region copy/paste and schematic storage for Forge 1.16.5.
+'''
+
+[[dependencies.zhbuilder]]
+modId="forge"
+mandatory=true
+versionRange="[36.2.39,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.zhbuilder]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.16.5,1.17)"
+ordering="NONE"
+side="BOTH"
