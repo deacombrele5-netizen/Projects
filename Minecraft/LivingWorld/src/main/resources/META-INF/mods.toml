@@ -1,0 +1,20 @@
+modLoader="javafml"
+loaderVersion="[36,)"
+license="MIT"
+[[mods]]
+modId="livingworld"
+version="0.1.0"
+displayName="Living World: Civilization"
+description='''Villages grow into modern towns through staged construction.'''
+[[dependencies.livingworld]]
+modId="forge"
+mandatory=true
+versionRange="[36.2.41,)"
+ordering="NONE"
+side="BOTH"
+[[dependencies.livingworld]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.16.5]"
+ordering="NONE"
+side="BOTH"
