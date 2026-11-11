@@ -2,11 +2,11 @@ name: Build Terrain Tools
 
 on:
   push:
+    branches:
+      - main
     paths:
       - 'Minecraft/TechgunsTerrainTools/**'
       - '.github/workflows/build-terrain-tools.yml'
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -21,14 +21,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '8'
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '4.10.3'
 
@@ -36,8 +34,11 @@ jobs:
         run: gradle build --no-daemon
 
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v1.0.0
+          name: Terrain Tools 1.0.0
+          target_commitish: main
           files: Minecraft/TechgunsTerrainTools/build/libs/*.jar
           generate_release_notes: false
+          body: ""
