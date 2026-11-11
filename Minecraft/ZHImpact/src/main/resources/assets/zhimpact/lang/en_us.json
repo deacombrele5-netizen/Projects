@@ -1,1 +1,15 @@
-{"key.zhimpact.open_menu":"Open ZHImpact menu","key.categories.zhimpact":"ZHImpact"}
+{
+  "key.zhimpact.open_menu": "Open ZHImpact menu",
+  "key.categories.zhimpact": "ZHImpact",
+  "screen.zhimpact.title": "ZHImpact Damage Lab",
+  "screen.zhimpact.toggle": "Impact: %s",
+  "screen.zhimpact.apply": "Apply value",
+  "screen.zhimpact.preset": "Next preset",
+  "screen.zhimpact.done": "Done",
+  "screen.zhimpact.range": "Range: -1.0E9 to +1.0E9",
+  "screen.zhimpact.ready": "Ready",
+  "screen.zhimpact.applied": "Value applied",
+  "screen.zhimpact.invalid": "Invalid number",
+  "screen.zhimpact.finite": "Enter a finite number",
+  "screen.zhimpact.preset_applied": "Preset applied"
+}
