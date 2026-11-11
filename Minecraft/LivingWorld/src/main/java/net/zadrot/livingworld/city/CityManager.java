@@ -142,7 +142,7 @@ public final class CityManager {
                     boolean stone=world.getBlockState(target).getMaterial()==net.minecraft.block.material.Material.STONE;
                     net.minecraft.item.Item wantedTool=stone?Items.IRON_PICKAXE:Items.IRON_AXE;
                     if(villager.getMainHandItem().getItem()!=wantedTool)
-                        villager.setItemSlot(net.minecraft.entity.EquipmentSlotType.MAINHAND,new ItemStack(wantedTool));
+                        villager.setItemSlot(net.minecraft.inventory.EquipmentSlotType.MAINHAND,new ItemStack(wantedTool));
                     double distance=villager.distanceToSqr(target.getX()+0.5,target.getY(),target.getZ()+0.5);
                     if(distance>9.0) villager.getNavigation().moveTo(target.getX()+0.5,target.getY(),target.getZ()+0.5,0.8);
                     else {
