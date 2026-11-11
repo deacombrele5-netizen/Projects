@@ -4,6 +4,7 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.gui.widget.button.Button;
 import net.minecraft.util.text.StringTextComponent;
+import net.minecraft.util.text.TranslationTextComponent;
 import net.zadrothub.zhimpact.ImpactConfig;
 
 import java.util.Locale;
@@ -14,7 +15,7 @@ public class ImpactScreen extends Screen {
     private String status = "Ready";
 
     public ImpactScreen() {
-        super(new StringTextComponent("ZHImpact"));
+        super(new TranslationTextComponent("screen.zhimpact.title"));
         this.multiplier = ImpactConfig.MULTIPLIER.get();
     }
 
@@ -29,35 +30,35 @@ public class ImpactScreen extends Screen {
         }));
 
         multiplierInput = new TextFieldWidget(this.font, cx - 100, top + 28, 200, 20,
-                new StringTextComponent("Damage multiplier"));
+                new TranslationTextComponent("screen.zhimpact.title"));
         multiplierInput.setMaxStringLength(32);
         multiplierInput.setText(String.format(Locale.ROOT, "%.6g", multiplier));
         this.addButton(multiplierInput);
 
         this.addButton(new Button(cx - 100, top + 54, 200, 20,
-                new StringTextComponent("Apply value"), button -> applyMultiplier()));
+                new TranslationTextComponent("screen.zhimpact.apply"), button -> applyMultiplier()));
 
         this.addButton(new Button(cx - 100, top + 82, 200, 20,
-                new StringTextComponent("Next preset"), button -> cyclePreset()));
+                new TranslationTextComponent("screen.zhimpact.preset"), button -> cyclePreset()));
 
         this.addButton(new Button(cx - 100, top + 112, 200, 20,
-                new StringTextComponent("Done"), button -> this.onClose()));
+                new TranslationTextComponent("screen.zhimpact.done"), button -> this.onClose()));
     }
 
     private void applyMultiplier() {
         try {
             double parsed = Double.parseDouble(multiplierInput.getText().trim());
             if (!Double.isFinite(parsed)) {
-                status = "Enter a finite number";
+                status = "screen.zhimpact.finite";
                 return;
             }
             multiplier = Math.max(-ImpactConfig.MAX_MULTIPLIER,
                     Math.min(ImpactConfig.MAX_MULTIPLIER, parsed));
             ImpactConfig.MULTIPLIER.set(multiplier);
             multiplierInput.setText(String.format(Locale.ROOT, "%.6g", multiplier));
-            status = "Value applied";
+            status = "screen.zhimpact.applied";
         } catch (NumberFormatException ex) {
-            status = "Invalid number";
+            status = "screen.zhimpact.invalid";
         }
     }
 
@@ -75,23 +76,23 @@ public class ImpactScreen extends Screen {
         multiplier = presets[next];
         ImpactConfig.MULTIPLIER.set(multiplier);
         multiplierInput.setText(String.format(Locale.ROOT, "%.6g", multiplier));
-        status = "Preset applied";
+        status = "screen.zhimpact.preset_applied";
     }
 
     private StringTextComponent enabledText() {
-        return new StringTextComponent("Impact: " + (ImpactConfig.ENABLED.get() ? "ON" : "OFF"));
+        return new TranslationTextComponent("screen.zhimpact.toggle", ImpactConfig.ENABLED.get() ? "ON" : "OFF");
     }
 
     @Override
     public void render(int mouseX, int mouseY, float partialTicks) {
         this.renderBackground();
-        drawCenteredString(this.font, this.title.getString(), this.width / 2,
+        drawCenteredString(this.font, this.title, this.width / 2,
                 this.height / 2 - 112, 0xFFFFFF);
         drawCenteredString(this.font, "Forge 1.16.5 | U / Г", this.width / 2,
                 this.height / 2 - 98, 0xA0A0A0);
-        drawCenteredString(this.font, "Range: -" + "1.0E9" + " to +1.0E9",
+        drawCenteredString(this.font, new TranslationTextComponent("screen.zhimpact.range"),
                 this.width / 2, this.height / 2 + 65, 0xA0A0A0);
-        drawCenteredString(this.font, status, this.width / 2,
+        drawCenteredString(this.font, new TranslationTextComponent(status), this.width / 2,
                 this.height / 2 + 78, 0x55FF55);
         super.render(mouseX, mouseY, partialTicks);
     }
