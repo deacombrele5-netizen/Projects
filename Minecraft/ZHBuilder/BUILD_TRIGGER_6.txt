@@ -1,0 +1,1 @@
+Build trigger for ForgeGradle 6.0.54 / Forge 36.2.41.
