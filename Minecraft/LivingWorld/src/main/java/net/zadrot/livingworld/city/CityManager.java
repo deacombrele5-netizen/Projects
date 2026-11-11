@@ -147,10 +147,14 @@ public final class CityManager {
                     if(distance>9.0) villager.getNavigation().moveTo(target.getX()+0.5,target.getY(),target.getZ()+0.5,0.8);
                     else {
                         villager.swing(net.minecraft.util.Hand.MAIN_HAND);
-                        if(world.getGameTime()%40==0 && world.destroyBlock(target,true,villager)) {
-                            for(ItemEntity drop:world.getEntitiesOfClass(ItemEntity.class,new AxisAlignedBB(target).inflate(2.5),e->true)) {
-                                inventory.insert(drop.getItem());
-                                drop.remove();
+                        if(world.getGameTime()%40==0) {
+                            boolean wasStone=world.getBlockState(target).getMaterial()==net.minecraft.block.material.Material.STONE;
+                            if(world.destroyBlock(target,true,villager)) {
+                                if(wasStone) world.addFreshEntity(new ItemEntity(world,target.getX()+0.5,target.getY()+0.5,target.getZ()+0.5,new ItemStack(Items.COBBLESTONE)));
+                                for(ItemEntity drop:world.getEntitiesOfClass(ItemEntity.class,new AxisAlignedBB(target).inflate(2.5),e->true)) {
+                                    inventory.insert(drop.getItem());
+                                    drop.remove();
+                                }
                             }
                         }
                     }
