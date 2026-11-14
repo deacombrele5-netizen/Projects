@@ -70,6 +70,21 @@ static bool finalizeTemp(const fs::path& tmp,const fs::path& dst,std::wstring& o
  if(!MoveFileExW(tmp.c_str(),dst.c_str(),MOVEFILE_WRITE_THROUGH)){DeleteFileW(tmp.c_str());err=L"Не удалось завершить запись результата.";return false;}
  out=dst.wstring();return true;
 }
+
+static bool createTempPath(const fs::path& dst,fs::path& tmp){
+ static const wchar_t hex[]=L"0123456789abcdef";
+ for(int attempt=0;attempt<64;++attempt){
+  BYTE rnd[16]{};if(!randomBytes(rnd,sizeof(rnd)))return false;
+  std::wstring suffix=L".zhctmp.";
+  for(BYTE b:rnd){suffix.push_back(hex[b>>4]);suffix.push_back(hex[b&15]);}
+  SecureZeroMemory(rnd,sizeof(rnd));tmp=dst;tmp+=suffix;
+  HANDLE h=CreateFileW(tmp.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_TEMPORARY,nullptr);
+  if(h!=INVALID_HANDLE_VALUE){CloseHandle(h);return true;}
+  if(GetLastError()!=ERROR_FILE_EXISTS&&GetLastError()!=ERROR_ALREADY_EXISTS)return false;
+ }
+ return false;
+}
+
 static void makeAad(const Header& h,uint64_t index,uint32_t size,std::vector<BYTE>& aad){
  aad.resize(sizeof(Header)+sizeof(index)+sizeof(size));
  memcpy(aad.data(),&h,sizeof(Header));memcpy(aad.data()+sizeof(Header),&index,sizeof(index));memcpy(aad.data()+sizeof(Header)+sizeof(index),&size,sizeof(size));
@@ -82,7 +97,7 @@ static bool encryptFile(const fs::path& p,const std::wstring& pass,std::wstring&
  BYTE key[32]{};if(!derive(pass,h,key)){err=L"Не удалось получить ключ.";return false;}
  fs::path wanted=p;wanted+=L".zhc";fs::path dst,tmp;
  if(!uniqueOutput(wanted,dst)){SecureZeroMemory(key,32);err=L"Не удалось подобрать имя результата.";return false;}
- tmp=dst;tmp+=L".zhctmp";
+ tmp.clear();if(!createTempPath(dst,tmp)){SecureZeroMemory(key,32);err=L"Не удалось создать уникальный временный файл.";return false;}
  std::ofstream file(tmp,std::ios::binary|std::ios::trunc);
  if(!file){SecureZeroMemory(key,32);err=L"Не удалось создать временный файл.";return false;}
  file.write((const char*)&h,sizeof(h));
@@ -112,7 +127,7 @@ static bool decryptFile(const fs::path& p,const std::wstring& pass,std::wstring&
  BYTE key[32]{};if(!derive(pass,h,key)){err=L"Не удалось получить ключ.";return false;}
  fs::path wanted=p;if(wanted.extension()==L".zhc")wanted.replace_extension();else wanted+=L".restored";
  fs::path dst,tmp;if(!uniqueOutput(wanted,dst)){SecureZeroMemory(key,32);err=L"Не удалось подобрать имя результата.";return false;}
- tmp=dst;tmp+=L".zhctmp";std::ofstream file(tmp,std::ios::binary|std::ios::trunc);
+ tmp.clear();if(!createTempPath(dst,tmp)){SecureZeroMemory(key,32);err=L"Не удалось создать уникальный временный файл.";return false;}std::ofstream file(tmp,std::ios::binary|std::ios::trunc);
  if(!file){SecureZeroMemory(key,32);err=L"Не удалось создать временный файл.";return false;}
  std::vector<BYTE> cipher(CHUNK_BYTES),plain(CHUNK_BYTES),aad;
  uint64_t total=0,index=0;bool ok=true,hadChunk=false;
