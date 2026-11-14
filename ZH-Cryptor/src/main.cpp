@@ -153,7 +153,7 @@ static bool decryptFile(const fs::path& p,const std::wstring& pass,std::wstring&
 
 
 
-static bool selfTest(){
+static bool selfTestCrypto(){
  std::error_code ec;fs::path root=fs::temp_directory_path()/(L"zhcryptor-selftest-"+std::to_wstring(GetCurrentProcessId()));
  fs::remove_all(root,ec);ec.clear();if(!fs::create_directories(root,ec)||ec)return false;
  bool ok=true;const std::wstring pass=L"x";
@@ -238,6 +238,29 @@ static void removeFolderLockIcon(const fs::path& folder){
  if(pos!=std::string::npos){pos+=22;try{DWORD saved=(DWORD)std::stoul(txt.substr(pos));if(original!=INVALID_FILE_ATTRIBUTES)SetFileAttributesW(folder.c_str(),saved);}catch(...){}}
  SetFileAttributesW(ini.c_str(),FILE_ATTRIBUTE_NORMAL);SetFileAttributesW(ico.c_str(),FILE_ATTRIBUTE_NORMAL);
  DeleteFileW(ini.c_str());DeleteFileW(ico.c_str());SHChangeNotify(SHCNE_ATTRIBUTES|SHCNE_UPDATEITEM,SHCNF_PATH,folder.c_str(),nullptr);
+}
+
+
+static bool selfTest(){
+ if(!selfTestCrypto())return false;
+ std::error_code ec;
+ fs::path root=fs::temp_directory_path()/(L"zhcryptor-icon-selftest-"+std::to_wstring(GetCurrentProcessId()));
+ fs::remove_all(root,ec);ec.clear();
+ fs::path folder=root/L"folder";
+ if(!fs::create_directories(folder,ec)||ec)return false;
+ DWORD before=GetFileAttributesW(folder.c_str());
+ bool ok=setFolderLockIcon(folder);
+ if(!ok||!fs::exists(folder/L"desktop.ini")||!fs::exists(folder/L".zhcryptor.ico")){fs::remove_all(root,ec);return false;}
+ {std::ifstream in(folder/L"desktop.ini",std::ios::binary);std::string data((std::istreambuf_iterator<char>(in)),{});if(data.find("ZHCRYPTOR_FOLDER_LOCK")==std::string::npos)ok=false;}
+ removeFolderLockIcon(folder);
+ if(fs::exists(folder/L"desktop.ini")||fs::exists(folder/L".zhcryptor.ico"))ok=false;
+ DWORD after=GetFileAttributesW(folder.c_str());
+ if(before!=INVALID_FILE_ATTRIBUTES&&after!=before)ok=false;
+ fs::path custom=root/L"custom";fs::create_directories(custom,ec);
+ {std::ofstream out(custom/L"desktop.ini",std::ios::binary);out<<"user-owned desktop settings";}
+ if(setFolderLockIcon(custom))ok=false;
+ {std::ifstream in(custom/L"desktop.ini",std::ios::binary);std::string data((std::istreambuf_iterator<char>(in)),{});if(data!="user-owned desktop settings")ok=false;}
+ fs::remove_all(root,ec);return ok&&!ec;
 }
 
 enum{P_PATH=101,P_PASS,P_CONFIRM,P_SHOW,P_ENCRYPT,P_DECRYPT,P_BROWSE,P_FOLDER,P_MENU,P_UNMENU,P_LANG,P_THEME,P_STATUS,P_TITLE=201,P_PATH_LABEL,P_PASS_LABEL,P_CONFIRM_LABEL,P_THEME_LABEL};
