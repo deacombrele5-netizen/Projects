@@ -124,7 +124,7 @@ static bool decryptFile(const fs::path& p,const std::wstring& pass,std::wstring&
  fs::path wanted=p;if(wanted.extension()==L".zhc")wanted.replace_extension();else wanted+=L".restored";
  fs::path dst,tmp;if(!uniqueOutput(wanted,dst)){SecureZeroMemory(key,32);err=L"Не удалось подобрать имя результата.";return false;}
  tmp.clear();if(!createTempPath(dst,tmp)){SecureZeroMemory(key,32);err=L"Не удалось создать уникальный временный файл.";return false;}std::ofstream file(tmp,std::ios::binary|std::ios::trunc);
- if(!file){SecureZeroMemory(key,32);err=L"Не удалось создать временный файл.";return false;}
+ if(!file){DeleteFileW(tmp.c_str());SecureZeroMemory(key,32);err=L"Не удалось создать временный файл.";return false;}
  std::vector<BYTE> cipher(CHUNK_BYTES),plain(CHUNK_BYTES),aad;
  uint64_t total=0,index=0;bool ok=true,hadChunk=false;
  while(ok){
@@ -204,8 +204,16 @@ static bool shellMenu(bool enable,std::wstring& err){
  }return true;
 }
 
+static bool isReparsePoint(const fs::path& path){
+ DWORD a=GetFileAttributesW(path.c_str());return a!=INVALID_FILE_ATTRIBUTES&&(a&FILE_ATTRIBUTE_REPARSE_POINT)!=0;
+}
 static bool hasEncrypted(const fs::path& folder){
- try{for(auto it=fs::recursive_directory_iterator(folder,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it)if(it->is_regular_file()&&it->path().extension()==L".zhc")return true;}catch(...){}return false;
+ try{
+  for(auto it=fs::recursive_directory_iterator(folder,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it){
+   if(isReparsePoint(it->path())){std::error_code ec;if(it->is_directory(ec))it.disable_recursion_pending();continue;}
+   std::error_code ec;if(it->is_regular_file(ec)&&it->path().extension()==L".zhc")return true;
+  }
+ }catch(...){}return false;
 }
 static bool setFolderLockIcon(const fs::path& folder){
  HMODULE mod=GetModuleHandleW(nullptr);HRSRC res=FindResourceW(mod,MAKEINTRESOURCEW(102),RT_RCDATA);if(!res)return false;
@@ -275,18 +283,19 @@ static void run(bool dec){
  int good=0,bad=0;std::wstring last;
  try{fs::path p(path);std::vector<fs::path> files;
   if(fs::is_regular_file(p))files.push_back(p);
-  else if(fs::is_directory(p)){for(auto it=fs::recursive_directory_iterator(p,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it)if(it->is_regular_file()&&(dec?it->path().extension()==L".zhc":(it->path().extension()!=L".zhc"&&it->path().filename()!=L"desktop.ini"&&it->path().filename()!=L".zhcryptor.ico"&&it->path().extension()!=L".zhctmp")))files.push_back(it->path());}
+  else if(fs::is_directory(p)){for(auto it=fs::recursive_directory_iterator(p,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it){if(isReparsePoint(it->path())){std::error_code e;if(it->is_directory(e))it.disable_recursion_pending();continue;}std::error_code e;if(it->is_regular_file(e)&&(dec?it->path().extension()==L".zhc":(it->path().extension()!=L".zhc"&&it->path().filename()!=L"desktop.ini"&&it->path().filename()!=L".zhcryptor.ico"&&it->path().extension()!=L".zhctmp")))files.push_back(it->path());}}
   else{last=L"Путь не найден.";bad++;}
   for(const auto& f:files){std::wstring out,err;bool ok=dec?decryptFile(f,pass,out,err):encryptFile(f,pass,out,err);if(ok){good++;last=out;}else{bad++;last=err;}}
   if(good>0&&!dec&&!registerZhcAssociation()){bad++;last=L"Файлы зашифрованы, но не удалось зарегистрировать их значок в Проводнике.";}
   if(good>0){
    std::vector<fs::path> dirs;
-   if(fs::is_directory(p)){dirs.push_back(p);for(auto it=fs::recursive_directory_iterator(p,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it)if(it->is_directory())dirs.push_back(it->path());}
+   if(fs::is_directory(p)){dirs.push_back(p);for(auto it=fs::recursive_directory_iterator(p,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it){if(isReparsePoint(it->path())){std::error_code e;if(it->is_directory(e))it.disable_recursion_pending();continue;}std::error_code e;if(it->is_directory(e))dirs.push_back(it->path());}}
    else dirs.push_back(p.parent_path());
    for(const auto& d:dirs){if(dec){if(!hasEncrypted(d))removeFolderLockIcon(d);}else if(hasEncrypted(d))setFolderLockIcon(d);}
   }
  }catch(...){bad++;last=L"Ошибка доступа к папке или файлам.";}
  SecureZeroMemory(pass.data(),pass.size()*sizeof(wchar_t));SecureZeroMemory(confirm.data(),confirm.size()*sizeof(wchar_t));
+ SetWindowTextW(gPass,L"");SetWindowTextW(gConfirm,L"");
  status(tr(L"Успешно: ",L"Done: ")+std::to_wstring(good)+tr(L"; ошибок: ",L"; errors: ")+std::to_wstring(bad)+(last.empty()?L"":L" — "+last));
 }
 static void applyLanguage(){
