@@ -1,7 +1,3 @@
-#define UNICODE
-#define _UNICODE
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
 #include <windows.h>
 #include <bcrypt.h>
 #include <commctrl.h>
@@ -99,7 +95,7 @@ static bool encryptFile(const fs::path& p,const std::wstring& pass,std::wstring&
  if(!uniqueOutput(wanted,dst)){SecureZeroMemory(key,32);err=L"Не удалось подобрать имя результата.";return false;}
  tmp.clear();if(!createTempPath(dst,tmp)){SecureZeroMemory(key,32);err=L"Не удалось создать уникальный временный файл.";return false;}
  std::ofstream file(tmp,std::ios::binary|std::ios::trunc);
- if(!file){SecureZeroMemory(key,32);err=L"Не удалось создать временный файл.";return false;}
+ if(!file){DeleteFileW(tmp.c_str());SecureZeroMemory(key,32);err=L"Не удалось создать временный файл.";return false;}
  file.write((const char*)&h,sizeof(h));
  std::vector<BYTE> plain(CHUNK_BYTES),cipher(CHUNK_BYTES),aad;
  uint64_t remaining=total,index=0;bool ok=(bool)file;
