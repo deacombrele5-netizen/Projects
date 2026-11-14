@@ -34,5 +34,10 @@ cmake --build build --config Release
 ```
 For 32-bit: use `-A Win32`.
 
+## Build the optional installer
+1. Put the downloaded `ZHCryptor.exe` in the repository's `dist` folder (create the folder if needed).
+2. Open the NSIS compiler and compile `installer/ZHCryptor.nsi`.
+3. The script creates a per-user installer and a registered uninstaller; it does not request administrator privileges.
+
 ## Runtime validation
 See [tests/README.md](tests/README.md). A successful CI build is only compile validation, not a cryptographic audit or proof of runtime correctness. Use disposable copies until the full test matrix has passed.
