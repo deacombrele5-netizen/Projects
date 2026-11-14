@@ -262,12 +262,12 @@ static bool writeWindowsFolderLockIcon(const fs::path& path){
  SelectObject(dc,oldPen);SelectObject(dc,oldBrush);
  DeleteObject(dark);DeleteObject(gold);DeleteObject(outline);
  BYTE* px=(BYTE*)pixels;for(int i=0;i<S*S;++i){BYTE b=px[i*4],g=px[i*4+1],r=px[i*4+2];if(b||g||r)px[i*4+3]=255;}
- ZHIconDir dir{0,1,1};ZHIconEntry ent{S,S,0,0,1,32,(DWORD)(sizeof(ZHDibHeader)+S*S*4+S*4),sizeof(ZHIconDir)+sizeof(ZHIconEntry)};
+ ZHIconDir dir{0,1,1};ZHIconEntry ent{S,S,0,0,1,32,(DWORD)(sizeof(ZHDibHeader)+S*S*4+(S/8)*4),sizeof(ZHIconDir)+sizeof(ZHIconEntry)};
  ZHDibHeader dh{sizeof(ZHDibHeader),S,S*2,1,32,BI_RGB,(DWORD)(S*S*4),0,0,0,0};
  std::ofstream out(path,std::ios::binary|std::ios::trunc);bool ok=(bool)out;
  if(ok){out.write((const char*)&dir,sizeof(dir));out.write((const char*)&ent,sizeof(ent));out.write((const char*)&dh,sizeof(dh));
   for(int y=S-1;y>=0;--y)out.write((const char*)px+y*S*4,S*4);
-  BYTE mask[S*4]{};for(int y=0;y<S;++y)out.write((const char*)mask,sizeof(mask));
+  BYTE mask[(S/8)*4]{};for(int y=0;y<S;++y)out.write((const char*)mask,sizeof(mask));
   out.flush();ok=(bool)out;
  }
  out.close();SelectObject(dc,old);DeleteDC(dc);DeleteObject(dib);DestroyIcon(info.hIcon);return ok;
