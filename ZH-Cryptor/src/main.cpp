@@ -242,15 +242,43 @@ static bool hasEncrypted(const fs::path& folder){
   }
  }catch(...){}return false;
 }
+#pragma pack(push,1)
+struct ZHIconDir { WORD reserved,type,count; };
+struct ZHIconEntry { BYTE width,height,colorCount,reserved; WORD planes,bitCount; DWORD bytesInRes,imageOffset; };
+struct ZHDibHeader { DWORD size; LONG width,height; WORD planes,bitCount; DWORD compression,sizeImage; LONG xppm,yppm; DWORD colors,important; };
+#pragma pack(pop)
+static bool writeWindowsFolderLockIcon(const fs::path& path){
+ SHFILEINFOW info{};
+ if(!SHGetFileInfoW(L"folder",FILE_ATTRIBUTE_DIRECTORY,&info,sizeof(info),SHGFI_ICON|SHGFI_USEFILEATTRIBUTES|SHGFI_LARGEICON)||!info.hIcon)return false;
+ constexpr int S=32;BITMAPINFO bi{};bi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);bi.bmiHeader.biWidth=S;bi.bmiHeader.biHeight=-S;bi.bmiHeader.biPlanes=1;bi.bmiHeader.biBitCount=32;bi.bmiHeader.biCompression=BI_RGB;
+ void* pixels=nullptr;HBITMAP dib=CreateDIBSection(nullptr,&bi,DIB_RGB_COLORS,&pixels,nullptr,0);HDC dc=CreateCompatibleDC(nullptr);
+ if(!dib||!dc||!pixels){if(dib)DeleteObject(dib);if(dc)DeleteDC(dc);DestroyIcon(info.hIcon);return false;}
+ memset(pixels,0,S*S*4);HGDIOBJ old=SelectObject(dc,dib);DrawIconEx(dc,0,0,info.hIcon,S,S,0,nullptr,DI_NORMAL);
+ HPEN outline=CreatePen(PS_SOLID,2,RGB(83,58,18));HBRUSH gold=CreateSolidBrush(RGB(225,174,55));
+ HGDIOBJ oldPen=SelectObject(dc,outline);HGDIOBJ oldBrush=SelectObject(dc,GetStockObject(NULL_BRUSH));
+ RoundRect(dc,19,12,29,27,8,8);
+ SelectObject(dc,gold);RoundRect(dc,15,20,30,31,3,3);
+ HBRUSH dark=CreateSolidBrush(RGB(65,47,20));SelectObject(dc,dark);SelectObject(dc,GetStockObject(NULL_PEN));Ellipse(dc,21,23,25,27);
+ SelectObject(dc,oldPen);SelectObject(dc,oldBrush);
+ DeleteObject(dark);DeleteObject(gold);DeleteObject(outline);
+ BYTE* px=(BYTE*)pixels;for(int i=0;i<S*S;++i){BYTE b=px[i*4],g=px[i*4+1],r=px[i*4+2];if(b||g||r)px[i*4+3]=255;}
+ ZHIconDir dir{0,1,1};ZHIconEntry ent{S,S,0,0,1,32,(DWORD)(sizeof(ZHDibHeader)+S*S*4+S*4),sizeof(ZHIconDir)+sizeof(ZHIconEntry)};
+ ZHDibHeader dh{sizeof(ZHDibHeader),S,S*2,1,32,BI_RGB,(DWORD)(S*S*4),0,0,0,0};
+ std::ofstream out(path,std::ios::binary|std::ios::trunc);bool ok=(bool)out;
+ if(ok){out.write((const char*)&dir,sizeof(dir));out.write((const char*)&ent,sizeof(ent));out.write((const char*)&dh,sizeof(dh));
+  for(int y=S-1;y>=0;--y)out.write((const char*)px+y*S*4,S*4);
+  BYTE mask[S*4]{};for(int y=0;y<S;++y)out.write((const char*)mask,sizeof(mask));
+  out.flush();ok=(bool)out;
+ }
+ out.close();SelectObject(dc,old);DeleteDC(dc);DeleteObject(dib);DestroyIcon(info.hIcon);return ok;
+}
 static bool setFolderLockIcon(const fs::path& folder){
- HMODULE mod=GetModuleHandleW(nullptr);HRSRC res=FindResourceW(mod,MAKEINTRESOURCEW(102),RT_RCDATA);if(!res)return false;
- HGLOBAL loaded=LoadResource(mod,res);DWORD bytes=SizeofResource(mod,res);const void* raw=LockResource(loaded);if(!raw||!bytes)return false;
  fs::path ini=folder/L"desktop.ini",ico=folder/L".zhcryptor.ico";
  DWORD original=GetFileAttributesW(folder.c_str());if(original==INVALID_FILE_ATTRIBUTES)return false;
  if(fs::exists(ini)){std::ifstream old(ini,std::ios::binary);std::string txt((std::istreambuf_iterator<char>(old)),{});if(txt.find("ZHCRYPTOR_FOLDER_LOCK")==std::string::npos)return false;auto at=txt.find("ORIGINAL_FOLDER_ATTRS=");if(at!=std::string::npos){at+=22;try{original=(DWORD)std::stoul(txt.substr(at));}catch(...){}}}
  else if(fs::exists(ico))return false;
  fs::path tmp=ico;tmp+=L".tmp";
- {std::ofstream out(tmp,std::ios::binary|std::ios::trunc);if(!out)return false;out.write((const char*)raw,bytes);out.flush();if(!out){out.close();fs::remove(tmp);return false;}}
+ if(!writeWindowsFolderLockIcon(tmp))return false;
  if(!MoveFileExW(tmp.c_str(),ico.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){fs::remove(tmp);return false;}
  std::ofstream meta(ini,std::ios::binary|std::ios::trunc);
  if(!meta){fs::remove(ico);return false;}
