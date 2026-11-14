@@ -387,17 +387,17 @@ static void controls(HWND h){
  ctl(h,L"STATIC",L"ZH Cryptor",SS_LEFT,18,12,250,30,P_TITLE);
  ctl(h,L"STATIC",tr(L"Файл или папка",L"File or folder"),0,18,52,200,20,P_PATH_LABEL);
  gPath=ctl(h,L"EDIT",L"",WS_BORDER|ES_AUTOHSCROLL,18,74,390,25,P_PATH);
- ctl(h,L"BUTTON",tr(L"Файл...",L"File..."),BS_PUSHBUTTON,416,74,88,25,P_BROWSE);
- ctl(h,L"BUTTON",tr(L"Папка...",L"Folder..."),BS_PUSHBUTTON,416,105,88,25,P_FOLDER);
+ ctl(h,L"BUTTON",tr(L"Файл...",L"File..."),BS_OWNERDRAW,416,74,88,25,P_BROWSE);
+ ctl(h,L"BUTTON",tr(L"Папка...",L"Folder..."),BS_OWNERDRAW,416,105,88,25,P_FOLDER);
  ctl(h,L"STATIC",tr(L"Пароль",L"Password"),0,18,112,150,20,P_PASS_LABEL);
  gPass=ctl(h,L"EDIT",L"",WS_BORDER|ES_PASSWORD|ES_AUTOHSCROLL,18,135,240,25,P_PASS);
- ctl(h,L"BUTTON",tr(L"Показать",L"Show"),BS_AUTOCHECKBOX,270,135,100,25,P_SHOW);
+ ctl(h,L"BUTTON",tr(L"Показать",L"Show"),BS_OWNERDRAW,270,135,100,25,P_SHOW);
  gConfirmLabel=ctl(h,L"STATIC",tr(L"Повторите пароль",L"Confirm password"),0,18,170,170,20,P_CONFIRM_LABEL);
  gConfirm=ctl(h,L"EDIT",L"",WS_BORDER|ES_PASSWORD|ES_AUTOHSCROLL,18,193,240,25,P_CONFIRM);
- ctl(h,L"BUTTON",tr(L"Зашифровать на месте",L"Encrypt in place"),BS_PUSHBUTTON,18,235,170,32,P_ENCRYPT);
- ctl(h,L"BUTTON",tr(L"Расшифровать на месте",L"Decrypt in place"),BS_PUSHBUTTON,196,235,170,32,P_DECRYPT);
- ctl(h,L"BUTTON",tr(L"Добавить меню Проводника",L"Add Explorer menu"),BS_PUSHBUTTON,18,280,205,27,P_MENU);
- ctl(h,L"BUTTON",tr(L"Убрать меню",L"Remove menu"),BS_PUSHBUTTON,232,280,130,27,P_UNMENU);
+ ctl(h,L"BUTTON",tr(L"Зашифровать на месте",L"Encrypt in place"),BS_OWNERDRAW,18,235,170,32,P_ENCRYPT);
+ ctl(h,L"BUTTON",tr(L"Расшифровать на месте",L"Decrypt in place"),BS_OWNERDRAW,196,235,170,32,P_DECRYPT);
+ ctl(h,L"BUTTON",tr(L"Добавить меню Проводника",L"Add Explorer menu"),BS_OWNERDRAW,18,280,205,27,P_MENU);
+ ctl(h,L"BUTTON",tr(L"Убрать меню",L"Remove menu"),BS_OWNERDRAW,232,280,130,27,P_UNMENU);
  gStatus=ctl(h,L"STATIC",tr(L"Оригиналы сохраняются. Результат создаётся рядом.",L"Originals are preserved. Output is created beside the source."),SS_LEFT,18,320,480,45,P_STATUS);
  HWND lang=ctl(h,L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,365,12,140,120,P_LANG);SendMessageW(lang,CB_ADDSTRING,0,(LPARAM)L"Русский");SendMessageW(lang,CB_ADDSTRING,0,(LPARAM)L"English");SendMessageW(lang,CB_SETCURSEL,0,0);
  ctl(h,L"STATIC",tr(L"Тема: светлая",L"Theme: light"),SS_LEFT,18,370,110,22,P_THEME_LABEL);
@@ -407,7 +407,7 @@ static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
  if(m==WM_CREATE){gWnd=h;controls(h);EnumChildWindows(h,disableChildTheme,0);applyLanguage();if(!gArgPath.empty()){SetWindowTextW(gPath,gArgPath.c_str());ShowWindow(GetDlgItem(h,gArgDecrypt?P_ENCRYPT:P_DECRYPT),SW_HIDE);mode(gArgDecrypt);SetFocus(gPass);}return 0;}
  if(m==WM_COMMAND){switch(LOWORD(w)){
  case P_BROWSE:chooseFile();break;case P_FOLDER:chooseFolder();break;
- case P_SHOW:gShow=SendMessageW((HWND)l,BM_GETCHECK,0,0)==BST_CHECKED;SendMessageW(gPass,EM_SETPASSWORDCHAR,gShow?0:L'*',0);SendMessageW(gConfirm,EM_SETPASSWORDCHAR,gShow?0:L'*',0);InvalidateRect(gPass,nullptr,TRUE);InvalidateRect(gConfirm,nullptr,TRUE);mode(false);break;
+ case P_SHOW:gShow=!gShow;SendMessageW(gPass,EM_SETPASSWORDCHAR,gShow?0:L'*',0);SendMessageW(gConfirm,EM_SETPASSWORDCHAR,gShow?0:L'*',0);InvalidateRect(gPass,nullptr,TRUE);InvalidateRect(gConfirm,nullptr,TRUE);InvalidateRect((HWND)l,nullptr,TRUE);mode(false);break;
  case P_ENCRYPT:mode(false);run(false);break;case P_DECRYPT:mode(true);run(true);break;
  case P_MENU:{std::wstring e;if(shellMenu(true,e))status(tr(L"Пункты Проводника добавлены для текущего пользователя.",L"Explorer items added for current user."));else status(e);break;}
  case P_UNMENU:{std::wstring e;if(shellMenu(false,e))status(tr(L"Пункты Проводника удалены.",L"Explorer items removed."));else status(e);break;}
@@ -415,6 +415,26 @@ static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
  case P_THEME:gDark=!gDark;updateThemeLabel();InvalidateRect(h,nullptr,TRUE);InvalidateRect(GetDlgItem(h,P_THEME),nullptr,TRUE);break;
 
  }return 0;}
+ if(m==WM_DRAWITEM&&(w==P_BROWSE||w==P_FOLDER||w==P_SHOW||w==P_ENCRYPT||w==P_DECRYPT||w==P_MENU||w==P_UNMENU)){
+  DRAWITEMSTRUCT* d=(DRAWITEMSTRUCT*)l;HDC dc=d->hDC;RECT r=d->rcItem;int saved=SaveDC(dc);
+  bool pressed=(d->itemState&ODS_SELECTED)!=0,disabled=(d->itemState&ODS_DISABLED)!=0;
+  COLORREF bg=gDark?RGB(43,46,52):RGB(238,240,244),edge=gDark?RGB(83,88,98):RGB(195,200,210),fg=gDark?RGB(239,241,245):RGB(35,39,45);
+  if(pressed)bg=gDark?RGB(57,62,71):RGB(220,225,233);
+  if(disabled)fg=gDark?RGB(130,134,143):RGB(150,154,162);
+  HBRUSH br=CreateSolidBrush(bg);HPEN pn=CreatePen(PS_SOLID,1,edge);
+  HGDIOBJ ob=SelectObject(dc,br),op=SelectObject(dc,pn);SelectObject(dc,GetStockObject(NULL_BRUSH));
+  RoundRect(dc,r.left+1,r.top+1,r.right-1,r.bottom-1,8,8);
+  SetBkMode(dc,TRANSPARENT);SetTextColor(dc,fg);
+  std::wstring label=get((HWND)d->hwndItem);
+  if(w==P_SHOW){
+   RECT cb={r.left+7,r.top+(r.bottom-r.top-14)/2,r.left+21,r.top+(r.bottom-r.top-14)/2+14};
+   HBRUSH cbr=CreateSolidBrush(gDark?RGB(31,33,37):RGB(255,255,255));FillRect(dc,&cb,cbr);FrameRect(dc,&cb,pn);DeleteObject(cbr);
+   if(gShow){MoveToEx(dc,cb.left+3,cb.top+7,nullptr);LineTo(dc,cb.left+6,cb.bottom-4);LineTo(dc,cb.right-3,cb.top+3);}
+   RECT tx={r.left+26,r.top,r.right-3,r.bottom};DrawTextW(dc,label.c_str(),-1,&tx,DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+  }else DrawTextW(dc,label.c_str(),-1,&r,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+  if(d->itemState&ODS_FOCUS){InflateRect(&r,-4,-4);DrawFocusRect(dc,&r);}
+  SelectObject(dc,ob);SelectObject(dc,op);DeleteObject(br);DeleteObject(pn);RestoreDC(dc,saved);return TRUE;
+ }
  if(m==WM_DRAWITEM&&w==P_THEME){
   DRAWITEMSTRUCT* d=(DRAWITEMSTRUCT*)l;HDC dc=d->hDC;RECT r=d->rcItem;
   int old=SaveDC(dc);SetBkMode(dc,TRANSPARENT);
