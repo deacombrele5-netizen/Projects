@@ -1,5 +1,0 @@
-item.area_pickaxe.name=Шахтёрская кирка
-key.categories.terraintools=Terrain Tools
-key.terraintools.toggle=Вкл/выкл добычу 3x3
-message.terraintools.enabled=Добыча 3x3: ВКЛ
-message.terraintools.disabled=Добыча 3x3: ВЫКЛ

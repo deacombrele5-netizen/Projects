@@ -1,1 +1,0 @@
-Place the 16x16 or higher area_pickaxe.png texture in this folder. A temporary vanilla-style texture can be added before release.
