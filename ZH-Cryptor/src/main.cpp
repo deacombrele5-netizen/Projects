@@ -181,11 +181,7 @@ static bool setFolderLockIcon(const fs::path& folder){
  if(!MoveFileExW(tmp.c_str(),ico.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){fs::remove(tmp);return false;}
  std::ofstream meta(ini,std::ios::binary|std::ios::trunc);
  if(!meta){fs::remove(ico);return false;}
- meta<<"; ZHCRYPTOR_FOLDER_LOCK
-; ORIGINAL_FOLDER_ATTRS="<<original<<"
-[.ShellClassInfo]
-IconResource=.zhcryptor.ico,0
-";meta.close();
+ meta<<"; ZHCRYPTOR_FOLDER_LOCK\n; ORIGINAL_FOLDER_ATTRS="<<original<<"\n[.ShellClassInfo]\nIconFile=.zhcryptor.ico\nIconIndex=0\n";meta.close();
  if(!meta){fs::remove(ini);fs::remove(ico);return false;}
  SetFileAttributesW(ico.c_str(),FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM);
  SetFileAttributesW(ini.c_str(),FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM);
