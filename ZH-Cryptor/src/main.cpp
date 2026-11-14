@@ -181,16 +181,17 @@ static bool registerZhcAssociation(){
  wchar_t exe[MAX_PATH]{};if(!GetModuleFileNameW(nullptr,exe,MAX_PATH))return false;
  HKEY h=nullptr;
  if(RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\Classes\\.zhc",0,nullptr,0,KEY_WRITE,nullptr,&h,nullptr)!=ERROR_SUCCESS)return false;
-  const wchar_t* prog=L"ZH.Cryptor.File";LONG rs=RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)prog,(DWORD)((wcslen(prog)+1)*sizeof(wchar_t)));RegCloseKey(h);if(rs!=ERROR_SUCCESS)return false;
- }
+ const wchar_t* prog=L"ZH.Cryptor.File";
+ LONG rs=RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)prog,(DWORD)((wcslen(prog)+1)*sizeof(wchar_t)));
+ RegCloseKey(h);if(rs!=ERROR_SUCCESS)return false;
  if(RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\Classes\\ZH.Cryptor.File\\DefaultIcon",0,nullptr,0,KEY_WRITE,nullptr,&h,nullptr)!=ERROR_SUCCESS)return false;
-  std::wstring icon=std::wstring(1,L'"')+std::wstring(exe)+std::wstring(1,L'"')+L",0";
-  LONG rs=RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)icon.c_str(),(DWORD)((icon.size()+1)*sizeof(wchar_t)));RegCloseKey(h);if(rs!=ERROR_SUCCESS)return false;
- }
+ std::wstring icon=std::wstring(1,L'"')+std::wstring(exe)+std::wstring(1,L'"')+L",0";
+ rs=RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)icon.c_str(),(DWORD)((icon.size()+1)*sizeof(wchar_t)));
+ RegCloseKey(h);if(rs!=ERROR_SUCCESS)return false;
  if(RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\Classes\\ZH.Cryptor.File\\shell\\open\\command",0,nullptr,0,KEY_WRITE,nullptr,&h,nullptr)!=ERROR_SUCCESS)return false;
-  std::wstring cmd=std::wstring(1,L'"')+std::wstring(exe)+std::wstring(1,L'"')+L" --decrypt "+std::wstring(1,L'"')+L"%1"+std::wstring(1,L'"');
-  LONG rs=RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)cmd.c_str(),(DWORD)((cmd.size()+1)*sizeof(wchar_t)));RegCloseKey(h);if(rs!=ERROR_SUCCESS)return false;
- }
+ std::wstring cmd=std::wstring(1,L'"')+std::wstring(exe)+std::wstring(1,L'"')+L" --decrypt "+std::wstring(1,L'"')+L"%1"+std::wstring(1,L'"');
+ rs=RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)cmd.c_str(),(DWORD)((cmd.size()+1)*sizeof(wchar_t)));
+ RegCloseKey(h);if(rs!=ERROR_SUCCESS)return false;
  SHChangeNotify(SHCNE_ASSOCCHANGED,SHCNF_IDLIST,nullptr,nullptr);return true;
 }
 
