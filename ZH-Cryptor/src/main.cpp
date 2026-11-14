@@ -18,6 +18,7 @@
 #include <cwchar>
 #include <sstream>
 #include <iterator>
+#include <algorithm>
 
 #pragma comment(lib,"bcrypt.lib")
 #pragma comment(lib,"comctl32.lib")
@@ -26,10 +27,11 @@
 #pragma comment(lib,"advapi32.lib")
 namespace fs=std::filesystem;
 static constexpr uint32_t KDF_ROUNDS=600000;
-static constexpr uint64_t MAX_BYTES=256ull*1024*1024;
-static constexpr char MAGIC[8]={'Z','H','C','R','Y','1','\0','\0'};
+static constexpr uint32_t CHUNK_BYTES=4u*1024u*1024u;
+static constexpr char MAGIC[8]={'Z','H','C','R','Y','2','\0','\0'};
 #pragma pack(push,1)
-struct Header { char magic[8]; uint32_t version; uint32_t rounds; uint64_t size; BYTE salt[16]; BYTE nonce[12]; BYTE tag[16]; };
+struct Header { char magic[8]; uint32_t version; uint32_t rounds; uint64_t size; BYTE salt[16]; };
+struct ChunkHeader { uint32_t size; BYTE nonce[12]; BYTE tag[16]; };
 #pragma pack(pop)
 
 static bool randomBytes(BYTE* p,ULONG n){return BCryptGenRandom(nullptr,p,n,BCRYPT_USE_SYSTEM_PREFERRED_RNG)>=0;}
@@ -39,57 +41,98 @@ static bool derive(const std::wstring& pass,const Header& h,BYTE key[32]){
  auto st=BCryptDeriveKeyPBKDF2(a,(PUCHAR)pass.data(),(ULONG)(pass.size()*sizeof(wchar_t)),(PUCHAR)h.salt,16,h.rounds,key,32,0);
  BCryptCloseAlgorithmProvider(a,0);return st>=0;
 }
-static bool gcm(bool enc,const Header& h,const BYTE key[32],const std::vector<BYTE>& in,std::vector<BYTE>& out,BYTE tag[16]){
+static bool gcmChunk(bool enc,const BYTE nonce[12],const BYTE key[32],const BYTE* aad,ULONG aadLen,const BYTE* input,ULONG length,BYTE* output,BYTE tag[16]){
  BCRYPT_ALG_HANDLE a=nullptr;BCRYPT_KEY_HANDLE k=nullptr;bool ok=false;ULONG written=0;
  if(BCryptOpenAlgorithmProvider(&a,BCRYPT_AES_ALGORITHM,nullptr,0)<0)return false;
  wchar_t mode[]=BCRYPT_CHAIN_MODE_GCM;
  if(BCryptSetProperty(a,BCRYPT_CHAINING_MODE,(PUCHAR)mode,sizeof(mode),0)<0)goto end;
  if(BCryptGenerateSymmetricKey(a,&k,nullptr,0,(PUCHAR)key,32,0)<0)goto end;
- out.resize(in.size());
- { BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO ai; BCRYPT_INIT_AUTH_MODE_INFO(ai);
-   ai.pbNonce=(PUCHAR)h.nonce;ai.cbNonce=12;ai.pbAuthData=(PUCHAR)&h;ai.cbAuthData=(ULONG)offsetof(Header,tag);ai.pbTag=tag;ai.cbTag=16;
-   NTSTATUS s=enc?BCryptEncrypt(k,(PUCHAR)in.data(),(ULONG)in.size(),&ai,nullptr,0,out.data(),(ULONG)out.size(),&written,0)
-                 :BCryptDecrypt(k,(PUCHAR)in.data(),(ULONG)in.size(),&ai,nullptr,0,out.data(),(ULONG)out.size(),&written,0);
-   ok=s>=0&&written==in.size();
+ {BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO ai;BCRYPT_INIT_AUTH_MODE_INFO(ai);
+  BYTE dummy=0;
+  ai.pbNonce=(PUCHAR)nonce;ai.cbNonce=12;ai.pbAuthData=(PUCHAR)aad;ai.cbAuthData=aadLen;ai.pbTag=tag;ai.cbTag=16;
+  NTSTATUS st=enc?BCryptEncrypt(k,(PUCHAR)(length?input:&dummy),length,&ai,nullptr,0,length?output:&dummy,length,&written,0)
+                 :BCryptDecrypt(k,(PUCHAR)(length?input:&dummy),length,&ai,nullptr,0,length?output:&dummy,length,&written,0);
+  ok=st>=0&&written==length;
  }
 end: if(k)BCryptDestroyKey(k);if(a)BCryptCloseAlgorithmProvider(a,0);return ok;
 }
-static bool readFile(const fs::path& p,std::vector<BYTE>& v,std::wstring& err){
- std::error_code ec;auto n=fs::file_size(p,ec);if(ec||n>MAX_BYTES+sizeof(Header)){err=L"Файл недоступен или превышает лимит 256 МиБ.";return false;}
- std::ifstream f(p,std::ios::binary);if(!f){err=L"Не удалось открыть файл.";return false;}v.resize((size_t)n);
- if(n&&!f.read((char*)v.data(),(std::streamsize)n)){err=L"Ошибка чтения.";return false;}return true;
+static bool uniqueOutput(const fs::path& wanted,fs::path& dst){
+ dst=wanted;
+ for(unsigned i=1;fs::exists(dst);++i){
+  dst=wanted.parent_path()/(wanted.stem().wstring()+L" ("+std::to_wstring(i)+L")"+wanted.extension().wstring());
+  if(i>10000)return false;
+ }
+ return true;
 }
-static bool writeNew(const fs::path& wanted,const std::vector<BYTE>& data,std::wstring& out,std::wstring& err){
- fs::path dst=wanted;
- for(unsigned i=1;fs::exists(dst);++i){dst=wanted.parent_path()/(wanted.stem().wstring()+L" ("+std::to_wstring(i)+L")"+wanted.extension().wstring());if(i>10000){err=L"Не удалось подобрать имя результата.";return false;}}
- fs::path tmp=dst;tmp+=L".zhctmp";
- {std::ofstream f(tmp,std::ios::binary|std::ios::trunc);if(!f){err=L"Не удалось создать файл результата.";return false;}
-  if(!data.empty())f.write((const char*)data.data(),(std::streamsize)data.size());f.flush();if(!f){f.close();fs::remove(tmp);err=L"Ошибка записи.";return false;}}
- if(!MoveFileExW(tmp.c_str(),dst.c_str(),MOVEFILE_WRITE_THROUGH)){fs::remove(tmp);err=L"Не удалось завершить запись.";return false;}
+static bool finalizeTemp(const fs::path& tmp,const fs::path& dst,std::wstring& out,std::wstring& err){
+ if(!MoveFileExW(tmp.c_str(),dst.c_str(),MOVEFILE_WRITE_THROUGH)){DeleteFileW(tmp.c_str());err=L"Не удалось завершить запись результата.";return false;}
  out=dst.wstring();return true;
 }
+static void makeAad(const Header& h,uint64_t index,uint32_t size,std::vector<BYTE>& aad){
+ aad.resize(sizeof(Header)+sizeof(index)+sizeof(size));
+ memcpy(aad.data(),&h,sizeof(Header));memcpy(aad.data()+sizeof(Header),&index,sizeof(index));memcpy(aad.data()+sizeof(Header)+sizeof(index),&size,sizeof(size));
+}
 static bool encryptFile(const fs::path& p,const std::wstring& pass,std::wstring& out,std::wstring& err){
- std::vector<BYTE> plain,cipher;if(!readFile(p,plain,err))return false;
- Header h{};memcpy(h.magic,MAGIC,8);h.version=1;h.rounds=KDF_ROUNDS;h.size=plain.size();
- if(!randomBytes(h.salt,16)||!randomBytes(h.nonce,12)){wipe(plain);err=L"Системный генератор случайных чисел недоступен.";return false;}
- BYTE key[32]{},tag[16]{};if(!derive(pass,h,key)){wipe(plain);err=L"Не удалось получить ключ.";return false;}
- bool ok=gcm(true,h,key,plain,cipher,tag);SecureZeroMemory(key,32);wipe(plain);
- if(!ok){wipe(cipher);err=L"Ошибка AES-256-GCM.";return false;}memcpy(h.tag,tag,16);SecureZeroMemory(tag,16);
- std::vector<BYTE> packed(sizeof(h)+cipher.size());memcpy(packed.data(),&h,sizeof(h));if(!cipher.empty())memcpy(packed.data()+sizeof(h),cipher.data(),cipher.size());wipe(cipher);
- fs::path dst=p;dst+=L".zhc";ok=writeNew(dst,packed,out,err);wipe(packed);return ok;
+ std::error_code ec;uint64_t total=fs::file_size(p,ec);if(ec){err=L"Не удалось определить размер файла.";return false;}
+ std::ifstream in(p,std::ios::binary);if(!in){err=L"Не удалось открыть исходный файл.";return false;}
+ Header h{};memcpy(h.magic,MAGIC,8);h.version=2;h.rounds=KDF_ROUNDS;h.size=total;
+ if(!randomBytes(h.salt,16)){err=L"Системный генератор случайных чисел недоступен.";return false;}
+ BYTE key[32]{};if(!derive(pass,h,key)){err=L"Не удалось получить ключ.";return false;}
+ fs::path wanted=p;wanted+=L".zhc";fs::path dst,tmp;
+ if(!uniqueOutput(wanted,dst)){SecureZeroMemory(key,32);err=L"Не удалось подобрать имя результата.";return false;}
+ tmp=dst;tmp+=L".zhctmp";
+ std::ofstream file(tmp,std::ios::binary|std::ios::trunc);
+ if(!file){SecureZeroMemory(key,32);err=L"Не удалось создать временный файл.";return false;}
+ file.write((const char*)&h,sizeof(h));
+ std::vector<BYTE> plain(CHUNK_BYTES),cipher(CHUNK_BYTES),aad;
+ uint64_t remaining=total,index=0;bool ok=(bool)file;
+ do{
+  uint32_t n=(uint32_t)std::min<uint64_t>(CHUNK_BYTES,remaining);
+  if(n&&!in.read((char*)plain.data(),n)){ok=false;err=L"Ошибка чтения исходного файла.";break;}
+  ChunkHeader ch{};ch.size=n;
+  if(!randomBytes(ch.nonce,12)){ok=false;err=L"Не удалось создать случайный nonce.";break;}
+  makeAad(h,index,n,aad);
+  if(!gcmChunk(true,ch.nonce,key,aad.data(),(ULONG)aad.size(),plain.data(),n,cipher.data(),ch.tag)){ok=false;err=L"Ошибка AES-256-GCM.";break;}
+  file.write((const char*)&ch,sizeof(ch));if(n)file.write((const char*)cipher.data(),n);
+  if(!file){ok=false;err=L"Ошибка записи зашифрованного файла.";break;}
+  SecureZeroMemory(plain.data(),n);SecureZeroMemory(cipher.data(),n);
+  remaining-=n;++index;
+ }while(remaining>0);
+ SecureZeroMemory(key,32);wipe(plain);wipe(cipher);wipe(aad);
+ file.flush();if(!file)ok=false;file.close();
+ if(!ok){DeleteFileW(tmp.c_str());if(err.empty())err=L"Не удалось записать зашифрованный файл.";return false;}
+ return finalizeTemp(tmp,dst,out,err);
 }
 static bool decryptFile(const fs::path& p,const std::wstring& pass,std::wstring& out,std::wstring& err){
- std::vector<BYTE> packed,plain;if(!readFile(p,packed,err))return false;
- if(packed.size()<sizeof(Header)){wipe(packed);err=L"Формат ZH Cryptor не распознан.";return false;}
- Header h{};memcpy(&h,packed.data(),sizeof(h));
- if(memcmp(h.magic,MAGIC,8)||h.version!=1||h.rounds<100000||h.rounds>2000000||h.size>MAX_BYTES||h.size!=packed.size()-sizeof(Header)){wipe(packed);err=L"Файл повреждён или имеет неподдерживаемый формат.";return false;}
- std::vector<BYTE> cipher(packed.begin()+sizeof(Header),packed.end());wipe(packed);BYTE key[32]{},tag[16]{};memcpy(tag,h.tag,16);
- if(!derive(pass,h,key)){wipe(cipher);err=L"Не удалось получить ключ.";return false;}
- bool ok=gcm(false,h,key,cipher,plain,tag);SecureZeroMemory(key,32);SecureZeroMemory(tag,16);wipe(cipher);
- if(!ok){wipe(plain);err=L"Неверный пароль или файл повреждён. Исходник не изменён.";return false;}
- fs::path dst=p;if(dst.extension()==L".zhc")dst.replace_extension();else dst+=L".restored";
- ok=writeNew(dst,plain,out,err);wipe(plain);return ok;
+ std::ifstream in(p,std::ios::binary);if(!in){err=L"Не удалось открыть зашифрованный файл.";return false;}
+ Header h{};if(!in.read((char*)&h,sizeof(h))||memcmp(h.magic,MAGIC,8)||h.version!=2||h.rounds<100000||h.rounds>2000000){err=L"Это не файл формата ZH Cryptor 2 или заголовок повреждён.";return false;}
+ BYTE key[32]{};if(!derive(pass,h,key)){err=L"Не удалось получить ключ.";return false;}
+ fs::path wanted=p;if(wanted.extension()==L".zhc")wanted.replace_extension();else wanted+=L".restored";
+ fs::path dst,tmp;if(!uniqueOutput(wanted,dst)){SecureZeroMemory(key,32);err=L"Не удалось подобрать имя результата.";return false;}
+ tmp=dst;tmp+=L".zhctmp";std::ofstream file(tmp,std::ios::binary|std::ios::trunc);
+ if(!file){SecureZeroMemory(key,32);err=L"Не удалось создать временный файл.";return false;}
+ std::vector<BYTE> cipher(CHUNK_BYTES),plain(CHUNK_BYTES),aad;
+ uint64_t total=0,index=0;bool ok=true,hadChunk=false;
+ while(ok){
+  ChunkHeader ch{};in.read((char*)&ch,sizeof(ch));
+  if(in.gcount()==0&&in.eof())break;
+  if(in.gcount()!=sizeof(ch)||ch.size>CHUNK_BYTES||total>h.size||ch.size>h.size-total){ok=false;err=L"Повреждён заголовок блока.";break;}
+  if(ch.size&&!in.read((char*)cipher.data(),ch.size)){ok=false;err=L"Файл обрезан.";break;}
+  makeAad(h,index,ch.size,aad);
+  if(!gcmChunk(false,ch.nonce,key,aad.data(),(ULONG)aad.size(),cipher.data(),ch.size,plain.data(),ch.tag)){ok=false;err=L"Неверный пароль или повреждённый блок. Исходник сохранён.";break;}
+  if(ch.size)file.write((const char*)plain.data(),ch.size);
+  if(!file){ok=false;err=L"Ошибка записи расшифрованного файла.";break;}
+  SecureZeroMemory(cipher.data(),ch.size);SecureZeroMemory(plain.data(),ch.size);
+  total+=ch.size;++index;hadChunk=true;
+  if(total==h.size)break;
+ }
+ if(ok&&(!hadChunk||total!=h.size||in.peek()!=std::char_traits<char>::eof())){ok=false;err=L"Размер или структура файла не совпадает с заголовком.";}
+ SecureZeroMemory(key,32);wipe(cipher);wipe(plain);wipe(aad);
+ file.flush();if(!file)ok=false;file.close();
+ if(!ok){DeleteFileW(tmp.c_str());if(err.empty())err=L"Не удалось расшифровать файл.";return false;}
+ return finalizeTemp(tmp,dst,out,err);
 }
+
 static bool shellMenu(bool enable,std::wstring& err){
  const wchar_t* keys[]={L"Software\\Classes\\*\\shell\\ZHCryptor.Encrypt",L"Software\\Classes\\*\\shell\\ZHCryptor.Decrypt",L"Software\\Classes\\Directory\\shell\\ZHCryptor.Encrypt",L"Software\\Classes\\Directory\\shell\\ZHCryptor.Decrypt"};
  if(!enable){for(auto k:keys){LONG s=RegDeleteTreeW(HKEY_CURRENT_USER,k);if(s!=ERROR_SUCCESS&&s!=ERROR_FILE_NOT_FOUND){err=L"Не удалось удалить пункт Проводника.";return false;}}return true;}
@@ -144,7 +187,7 @@ static void chooseFile(){wchar_t p[32768]{};OPENFILENAMEW o{};o.lStructSize=size
 static void chooseFolder(){BROWSEINFOW b{};b.hwndOwner=gWnd;b.lpszTitle=tr(L"Выберите папку",L"Select a folder");LPITEMIDLIST id=SHBrowseForFolderW(&b);if(id){wchar_t p[MAX_PATH]{};if(SHGetPathFromIDListW(id,p))SetWindowTextW(gPath,p);CoTaskMemFree(id);}}
 static void run(bool dec){
  std::wstring path=get(gPath),pass=get(gPass),confirm=get(gConfirm);
- if(path.empty()||pass.size()<8){MessageBoxW(gWnd,tr(L"Укажи файл или папку и пароль минимум из 8 символов.",L"Choose a file or folder and enter a password of at least 8 characters."),L"ZH Cryptor",MB_ICONWARNING);return;}
+ if(path.empty()||pass.empty()){MessageBoxW(gWnd,tr(L"Укажи файл или папку и введи пароль хотя бы из одного символа.",L"Choose a file or folder and enter at least one password character."),L"ZH Cryptor",MB_ICONWARNING);return;}
  if(!dec&&!gShow&&pass!=confirm){MessageBoxW(gWnd,tr(L"Пароли не совпадают.",L"Passwords do not match."),L"ZH Cryptor",MB_ICONWARNING);return;}
  int good=0,bad=0;std::wstring last;
  try{fs::path p(path);std::vector<fs::path> files;
