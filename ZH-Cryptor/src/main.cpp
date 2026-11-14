@@ -133,7 +133,7 @@ static void removeFolderLockIcon(const fs::path& folder){
  DeleteFileW(ini.c_str());DeleteFileW(ico.c_str());SHChangeNotify(SHCNE_UPDATEITEM,SHCNF_PATH,folder.c_str(),nullptr);
 }
 
-enum{P_PATH=101,P_PASS,P_CONFIRM,P_SHOW,P_ENCRYPT,P_DECRYPT,P_BROWSE,P_FOLDER,P_MENU,P_UNMENU,P_LANG,P_THEME,P_STATUS};
+enum{P_PATH=101,P_PASS,P_CONFIRM,P_SHOW,P_ENCRYPT,P_DECRYPT,P_BROWSE,P_FOLDER,P_MENU,P_UNMENU,P_LANG,P_THEME,P_STATUS,P_TITLE=201,P_PATH_LABEL,P_PASS_LABEL,P_CONFIRM_LABEL};
 static HWND gWnd,gPath,gPass,gConfirm,gStatus,gConfirmLabel;static bool gShow=false,gDark=false,gEnglish=false;static std::wstring gArgPath;static bool gArgDecrypt=false;
 static const wchar_t* tr(const wchar_t* ru,const wchar_t* en){return gEnglish?en:ru;}
 static HWND ctl(HWND p,const wchar_t* cls,const wchar_t* text,DWORD style,int x,int y,int w,int h,int id=0){return CreateWindowExW(0,cls,text,WS_CHILD|WS_VISIBLE|style,x,y,w,h,p,(HMENU)(INT_PTR)id,GetModuleHandleW(nullptr),nullptr);}
@@ -157,16 +157,16 @@ static void run(bool dec){
  SecureZeroMemory(pass.data(),pass.size()*sizeof(wchar_t));SecureZeroMemory(confirm.data(),confirm.size()*sizeof(wchar_t));
  status(tr(L"Успешно: ",L"Done: ")+std::to_wstring(good)+tr(L"; ошибок: ",L"; errors: ")+std::to_wstring(bad)+(last.empty()?L"":L" — "+last));
 }
-static void controls(HWND h){
- ctl(h,L"STATIC",L"ZH Cryptor",SS_LEFT,18,12,250,30);
- ctl(h,L"STATIC",tr(L"Файл или папка",L"File or folder"),0,18,52,200,20);
+static void applyLanguage(){\n SetWindowTextW(gWnd,L"ZH Cryptor");\n SetWindowTextW(GetDlgItem(gWnd,P_TITLE),L"ZH Cryptor");\n SetWindowTextW(GetDlgItem(gWnd,P_PATH_LABEL),tr(L"Файл или папка",L"File or folder"));\n SetWindowTextW(GetDlgItem(gWnd,P_PASS_LABEL),tr(L"Пароль",L"Password"));\n SetWindowTextW(GetDlgItem(gWnd,P_CONFIRM_LABEL),tr(L"Повторите пароль",L"Confirm password"));\n SetWindowTextW(GetDlgItem(gWnd,P_BROWSE),tr(L"Файл...",L"File..."));\n SetWindowTextW(GetDlgItem(gWnd,P_FOLDER),tr(L"Папка...",L"Folder..."));\n SetWindowTextW(GetDlgItem(gWnd,P_SHOW),tr(L"Показать",L"Show"));\n SetWindowTextW(GetDlgItem(gWnd,P_ENCRYPT),tr(L"Зашифровать копию",L"Encrypt a copy"));\n SetWindowTextW(GetDlgItem(gWnd,P_DECRYPT),tr(L"Расшифровать копию",L"Decrypt a copy"));\n SetWindowTextW(GetDlgItem(gWnd,P_MENU),tr(L"Добавить меню Проводника",L"Add Explorer menu"));\n SetWindowTextW(GetDlgItem(gWnd,P_UNMENU),tr(L"Убрать меню",L"Remove menu"));\n SetWindowTextW(GetDlgItem(gWnd,P_THEME),tr(L"Тёмная тема",L"Dark theme"));\n SetWindowTextW(gStatus,tr(L"Оригиналы сохраняются. Результат создаётся рядом.",L"Originals are preserved. Output is created beside the source."));\n}\nstatic void controls(HWND h){
+ ctl(h,L"STATIC",L"ZH Cryptor",SS_LEFT,18,12,250,30,P_TITLE);
+ ctl(h,L"STATIC",tr(L"Файл или папка",L"File or folder"),0,18,52,200,20,P_PATH_LABEL);
  gPath=ctl(h,L"EDIT",L"",WS_BORDER|ES_AUTOHSCROLL,18,74,390,25,P_PATH);
  ctl(h,L"BUTTON",tr(L"Файл...",L"File..."),BS_PUSHBUTTON,416,74,88,25,P_BROWSE);
  ctl(h,L"BUTTON",tr(L"Папка...",L"Folder..."),BS_PUSHBUTTON,416,105,88,25,P_FOLDER);
- ctl(h,L"STATIC",tr(L"Пароль",L"Password"),0,18,112,150,20);
+ ctl(h,L"STATIC",tr(L"Пароль",L"Password"),0,18,112,150,20,P_PASS_LABEL);
  gPass=ctl(h,L"EDIT",L"",WS_BORDER|ES_PASSWORD|ES_AUTOHSCROLL,18,135,240,25,P_PASS);
  ctl(h,L"BUTTON",tr(L"Показать",L"Show"),BS_AUTOCHECKBOX,270,135,100,25,P_SHOW);
- gConfirmLabel=ctl(h,L"STATIC",tr(L"Повторите пароль",L"Confirm password"),0,18,170,170,20);
+ gConfirmLabel=ctl(h,L"STATIC",tr(L"Повторите пароль",L"Confirm password"),0,18,170,170,20,P_CONFIRM_LABEL);
  gConfirm=ctl(h,L"EDIT",L"",WS_BORDER|ES_PASSWORD|ES_AUTOHSCROLL,18,193,240,25,P_CONFIRM);
  ctl(h,L"BUTTON",tr(L"Зашифровать копию",L"Encrypt a copy"),BS_PUSHBUTTON,18,235,170,32,P_ENCRYPT);
  ctl(h,L"BUTTON",tr(L"Расшифровать копию",L"Decrypt a copy"),BS_PUSHBUTTON,196,235,170,32,P_DECRYPT);
@@ -177,14 +177,14 @@ static void controls(HWND h){
  ctl(h,L"BUTTON",tr(L"Тёмная тема",L"Dark theme"),BS_AUTOCHECKBOX,18,370,140,23,P_THEME);
 }
 static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
- if(m==WM_CREATE){gWnd=h;controls(h);if(!gArgPath.empty())SetWindowTextW(gPath,gArgPath.c_str());mode(gArgDecrypt);return 0;}
+ if(m==WM_CREATE){gWnd=h;controls(h);applyLanguage();if(!gArgPath.empty())SetWindowTextW(gPath,gArgPath.c_str());mode(gArgDecrypt);return 0;}
  if(m==WM_COMMAND){switch(LOWORD(w)){
  case P_BROWSE:chooseFile();break;case P_FOLDER:chooseFolder();break;
  case P_SHOW:gShow=SendMessageW((HWND)l,BM_GETCHECK,0,0)==BST_CHECKED;SendMessageW(gPass,EM_SETPASSWORDCHAR,gShow?0:L'*',0);SendMessageW(gConfirm,EM_SETPASSWORDCHAR,gShow?0:L'*',0);InvalidateRect(gPass,nullptr,TRUE);InvalidateRect(gConfirm,nullptr,TRUE);mode(false);break;
  case P_ENCRYPT:mode(false);run(false);break;case P_DECRYPT:mode(true);run(true);break;
  case P_MENU:{std::wstring e;if(shellMenu(true,e))status(tr(L"Пункты Проводника добавлены для текущего пользователя.",L"Explorer items added for current user."));else status(e);break;}
  case P_UNMENU:{std::wstring e;if(shellMenu(false,e))status(tr(L"Пункты Проводника удалены.",L"Explorer items removed."));else status(e);break;}
- case P_LANG:gEnglish=SendMessageW((HWND)l,CB_GETCURSEL,0,0)==1;MessageBoxW(h,tr(L"Перезапусти программу, чтобы применить язык.",L"Restart the app to apply language."),L"ZH Cryptor",MB_OK);break;
+ case P_LANG:gEnglish=SendMessageW((HWND)l,CB_GETCURSEL,0,0)==1;applyLanguage();break;
  case P_THEME:gDark=SendMessageW((HWND)l,BM_GETCHECK,0,0)==BST_CHECKED;InvalidateRect(h,nullptr,TRUE);break;
  }return 0;}
  if(m==WM_CTLCOLORSTATIC||m==WM_CTLCOLOREDIT||m==WM_CTLCOLORBTN){if(gDark){HDC dc=(HDC)w;SetBkColor(dc,RGB(40,40,40));SetTextColor(dc,RGB(240,240,240));static HBRUSH b=CreateSolidBrush(RGB(40,40,40));return (LRESULT)b;}}
