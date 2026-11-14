@@ -429,7 +429,7 @@ static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
   std::wstring label=get((HWND)d->hwndItem);
   if(w==P_SHOW){
    RECT cb={r.left+7,r.top+(r.bottom-r.top-14)/2,r.left+21,r.top+(r.bottom-r.top-14)/2+14};
-   HBRUSH cbr=CreateSolidBrush(gDark?RGB(31,33,37):RGB(255,255,255));FillRect(dc,&cb,cbr);FrameRect(dc,&cb,pn);DeleteObject(cbr);
+   HBRUSH cbr=CreateSolidBrush(gDark?RGB(31,33,37):RGB(255,255,255));HBRUSH borderBrush=CreateSolidBrush(edge);FillRect(dc,&cb,cbr);FrameRect(dc,&cb,borderBrush);DeleteObject(borderBrush);DeleteObject(cbr);
    if(gShow){MoveToEx(dc,cb.left+3,cb.top+7,nullptr);LineTo(dc,cb.left+6,cb.bottom-4);LineTo(dc,cb.right-3,cb.top+3);}
    RECT tx={r.left+26,r.top,r.right-3,r.bottom};DrawTextW(dc,label.c_str(),-1,&tx,DT_LEFT|DT_VCENTER|DT_SINGLELINE);
   }else DrawTextW(dc,label.c_str(),-1,&r,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
