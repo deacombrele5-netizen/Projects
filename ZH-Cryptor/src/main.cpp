@@ -14,6 +14,8 @@
 #include <string>
 #include <cstring>
 #include <cstdint>
+#include <cstddef>
+#include <cwchar>
 
 #pragma comment(lib,"bcrypt.lib")
 #pragma comment(lib,"comctl32.lib")
