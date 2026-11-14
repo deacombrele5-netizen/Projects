@@ -294,6 +294,7 @@ static bool selfTest(){
 
 enum{P_PATH=101,P_PASS,P_CONFIRM,P_SHOW,P_ENCRYPT,P_DECRYPT,P_BROWSE,P_FOLDER,P_MENU,P_UNMENU,P_LANG,P_THEME,P_STATUS,P_TITLE=201,P_PATH_LABEL,P_PASS_LABEL,P_CONFIRM_LABEL,P_THEME_LABEL};
 static HWND gWnd,gPath,gPass,gConfirm,gStatus,gConfirmLabel;static bool gShow=false,gDark=false,gEnglish=false;static std::wstring gArgPath;static bool gArgDecrypt=false;
+static const wchar_t* tr(const wchar_t* ru,const wchar_t* en);
 static void updateThemeLabel(){
  HWND h=GetDlgItem(gWnd,P_THEME_LABEL);
  if(h)SetWindowTextW(h,tr(gDark?L"Тема: тёмная":L"Тема: светлая",gDark?L"Theme: dark":L"Theme: light"));
