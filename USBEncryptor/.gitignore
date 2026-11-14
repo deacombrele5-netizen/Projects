@@ -1,9 +1,0 @@
-build/
-out/
-*.user
-*.suo
-*.pdb
-*.ilk
-*.obj
-*.exe
-*.zip
