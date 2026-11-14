@@ -137,7 +137,7 @@ static bool decryptFile(const fs::path& p,const std::wstring& pass,std::wstring&
 
 
 static bool selfTest(){
- std::error_code ec;fs::path root=fs::temp_directory_path()/("zhcryptor-selftest-"+std::to_wstring(GetCurrentProcessId()));
+ std::error_code ec;fs::path root=fs::temp_directory_path()/(L"zhcryptor-selftest-"+std::to_wstring(GetCurrentProcessId()));
  fs::remove_all(root,ec);ec.clear();if(!fs::create_directories(root,ec)||ec)return false;
  bool ok=true;const std::wstring pass=L"x";
  std::vector<size_t> sizes={0,CHUNK_BYTES+37};
@@ -241,7 +241,8 @@ static void run(bool dec){
   if(fs::is_regular_file(p))files.push_back(p);
   else if(fs::is_directory(p)){for(auto it=fs::recursive_directory_iterator(p,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it)if(it->is_regular_file()&&(dec?it->path().extension()==L".zhc":(it->path().extension()!=L".zhc"&&it->path().filename()!=L"desktop.ini"&&it->path().filename()!=L".zhcryptor.ico"&&it->path().extension()!=L".zhctmp")))files.push_back(it->path());}
   else{last=L"Путь не найден.";bad++;}
-  for(const auto& f:files){std::wstring out,err;bool ok=dec?decryptFile(f,pass,out,err):encryptFile(f,pass,out,err);if(ok){good++;last=out;}else{bad++;last=err;}}\n  if(good>0&&!dec)registerZhcAssociation();
+  for(const auto& f:files){std::wstring out,err;bool ok=dec?decryptFile(f,pass,out,err):encryptFile(f,pass,out,err);if(ok){good++;last=out;}else{bad++;last=err;}}
+  if(good>0&&!dec)registerZhcAssociation();
   if(good>0){
    std::vector<fs::path> dirs;
    if(fs::is_directory(p)){dirs.push_back(p);for(auto it=fs::recursive_directory_iterator(p,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it)if(it->is_directory())dirs.push_back(it->path());}
