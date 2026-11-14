@@ -1,5 +1,0 @@
-item.area_pickaxe.name=Terrain Pickaxe
-key.categories.terraintools=Terrain Tools
-key.terraintools.toggle=Toggle 3x3 mining mode
-message.terraintools.enabled=3x3 mining: ON
-message.terraintools.disabled=3x3 mining: OFF
