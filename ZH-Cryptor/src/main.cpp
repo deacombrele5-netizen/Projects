@@ -180,7 +180,11 @@ static bool setFolderLockIcon(const fs::path& folder){
  if(!MoveFileExW(tmp.c_str(),ico.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){fs::remove(tmp);return false;}
  std::ofstream meta(ini,std::ios::binary|std::ios::trunc);
  if(!meta){fs::remove(ico);return false;}
- meta<<"; ZHCRYPTOR_FOLDER_LOCK\n; ORIGINAL_FOLDER_ATTRS="<<original<<"\n[.ShellClassInfo]\nIconResource=.zhcryptor.ico,0\n";meta.close();
+ meta<<"; ZHCRYPTOR_FOLDER_LOCK
+; ORIGINAL_FOLDER_ATTRS="<<original<<"
+[.ShellClassInfo]
+IconResource=.zhcryptor.ico,0
+";meta.close();
  if(!meta){fs::remove(ini);fs::remove(ico);return false;}
  SetFileAttributesW(ico.c_str(),FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM);
  SetFileAttributesW(ini.c_str(),FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM);
@@ -260,7 +264,8 @@ static void controls(HWND h){
  ctl(h,L"BUTTON",tr(L"Убрать меню",L"Remove menu"),BS_PUSHBUTTON,232,280,130,27,P_UNMENU);
  gStatus=ctl(h,L"STATIC",tr(L"Оригиналы сохраняются. Результат создаётся рядом.",L"Originals are preserved. Output is created beside the source."),SS_LEFT,18,320,480,45,P_STATUS);
  HWND lang=ctl(h,L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,365,12,140,120,P_LANG);SendMessageW(lang,CB_ADDSTRING,0,(LPARAM)L"Русский");SendMessageW(lang,CB_ADDSTRING,0,(LPARAM)L"English");SendMessageW(lang,CB_SETCURSEL,0,0);
- ctl(h,L"STATIC",tr(L"Тема",L"Theme"),SS_LEFT,18,370,55,22,P_THEME_LABEL);\n HWND theme=ctl(h,TRACKBAR_CLASSW,L"",TBS_NOTICKS|TBS_TOOLTIPS,76,367,90,28,P_THEME);SendMessageW(theme,TBM_SETRANGE,TRUE,MAKELONG(0,1));SendMessageW(theme,TBM_SETPOS,TRUE,0);
+ ctl(h,L"STATIC",tr(L"Тема",L"Theme"),SS_LEFT,18,370,55,22,P_THEME_LABEL);
+ HWND theme=ctl(h,TRACKBAR_CLASSW,L"",TBS_NOTICKS|TBS_TOOLTIPS,76,367,90,28,P_THEME);SendMessageW(theme,TBM_SETRANGE,TRUE,MAKELONG(0,1));SendMessageW(theme,TBM_SETPOS,TRUE,0);
 }
 static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
  if(m==WM_CREATE){gWnd=h;controls(h);applyLanguage();if(!gArgPath.empty()){SetWindowTextW(gPath,gArgPath.c_str());ShowWindow(GetDlgItem(h,gArgDecrypt?P_ENCRYPT:P_DECRYPT),SW_HIDE);mode(gArgDecrypt);SetFocus(gPass);}return 0;}
@@ -273,7 +278,8 @@ static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
  case P_LANG:gEnglish=SendMessageW((HWND)l,CB_GETCURSEL,0,0)==1;applyLanguage();break;
 
  }return 0;}
- if(m==WM_HSCROLL&&(HWND)l==GetDlgItem(h,P_THEME)){gDark=SendMessageW((HWND)l,TBM_GETPOS,0,0)==1;InvalidateRect(h,nullptr,TRUE);return 0;}\n if(m==WM_CTLCOLORSTATIC||m==WM_CTLCOLOREDIT||m==WM_CTLCOLORBTN||m==WM_CTLCOLORLISTBOX){if(gDark){HDC dc=(HDC)w;SetBkColor(dc,RGB(40,40,40));SetTextColor(dc,RGB(240,240,240));static HBRUSH b=CreateSolidBrush(RGB(40,40,40));return (LRESULT)b;}}
+ if(m==WM_HSCROLL&&(HWND)l==GetDlgItem(h,P_THEME)){gDark=SendMessageW((HWND)l,TBM_GETPOS,0,0)==1;InvalidateRect(h,nullptr,TRUE);return 0;}
+ if(m==WM_CTLCOLORSTATIC||m==WM_CTLCOLOREDIT||m==WM_CTLCOLORBTN||m==WM_CTLCOLORLISTBOX){if(gDark){HDC dc=(HDC)w;SetBkColor(dc,RGB(40,40,40));SetTextColor(dc,RGB(240,240,240));static HBRUSH b=CreateSolidBrush(RGB(40,40,40));return (LRESULT)b;}}
  if(m==WM_ERASEBKGND&&gDark){RECT r;GetClientRect(h,&r);static HBRUSH b=CreateSolidBrush(RGB(40,40,40));FillRect((HDC)w,&r,b);return 1;}
  if(m==WM_DESTROY){PostQuitMessage(0);return 0;}return DefWindowProcW(h,m,w,l);
 }
