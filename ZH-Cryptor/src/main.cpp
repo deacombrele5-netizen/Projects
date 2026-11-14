@@ -309,7 +309,7 @@ static bool selfTest(){
  bool ok=setFolderLockIcon(folder);
  if(!ok||!fs::exists(folder/L"desktop.ini")||!fs::exists(folder/L".zhcryptor.ico")){fs::remove_all(root,ec);return false;}
  {std::ifstream in(folder/L"desktop.ini",std::ios::binary);std::string data((std::istreambuf_iterator<char>(in)),{});if(data.find("ZHCRYPTOR_FOLDER_LOCK")==std::string::npos)ok=false;}
- {std::ifstream in(folder/L".zhcryptor.ico",std::ios::binary);ZHIconDir dir{};ZHIconEntry ent{};in.read((char*)&dir,sizeof(dir));in.read((char*)&ent,sizeof(ent));auto end=in.tellg();in.seekg(0,std::ios::end);if(!in||dir.reserved!=0||dir.type!=1||dir.count!=1||ent.width!=32||ent.height!=32||ent.bitCount!=32||ent.bytesInRes!=(sizeof(ZHDibHeader)+32*32*4+16*32)||in.tellg()!=static_cast<std::streamoff>(sizeof(ZHIconDir)+sizeof(ZHIconEntry)+ent.bytesInRes))ok=false;}
+ {std::ifstream in(folder/L".zhcryptor.ico",std::ios::binary);ZHIconDir dir{};ZHIconEntry ent{};in.read((char*)&dir,sizeof(dir));in.read((char*)&ent,sizeof(ent));in.seekg(0,std::ios::end);if(!in||dir.reserved!=0||dir.type!=1||dir.count!=1||ent.width!=32||ent.height!=32||ent.bitCount!=32||ent.bytesInRes!=(sizeof(ZHDibHeader)+32*32*4+16*32)||in.tellg()!=static_cast<std::streamoff>(sizeof(ZHIconDir)+sizeof(ZHIconEntry)+ent.bytesInRes))ok=false;}
  removeFolderLockIcon(folder);
  if(fs::exists(folder/L"desktop.ini")||fs::exists(folder/L".zhcryptor.ico"))ok=false;
  DWORD after=GetFileAttributesW(folder.c_str());
