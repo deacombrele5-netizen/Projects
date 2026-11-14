@@ -4,6 +4,7 @@
 #include <commdlg.h>
 #include <shlobj.h>
 #include <shellapi.h>
+#include <uxtheme.h>
 #include <filesystem>
 #include <fstream>
 #include <vector>
@@ -21,6 +22,7 @@
 #pragma comment(lib,"comdlg32.lib")
 #pragma comment(lib,"shell32.lib")
 #pragma comment(lib,"advapi32.lib")
+#pragma comment(lib,"uxtheme.lib")
 namespace fs=std::filesystem;
 static bool registerZhcAssociation();
 static bool selfTest();
@@ -236,7 +238,7 @@ static bool hasEncrypted(const fs::path& folder){
  try{
   for(auto it=fs::recursive_directory_iterator(folder,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it){
    if(isReparsePoint(it->path())){std::error_code ec;if(it->is_directory(ec))it.disable_recursion_pending();continue;}
-   std::error_code ec;if(it->is_regular_file(ec)&&it->path().extension()==L".zhc")return true;
+   std::error_code ec;if(it->is_regular_file(ec)&&isZhcFile(it->path()))return true;
   }
  }catch(...){}return false;
 }
@@ -292,6 +294,13 @@ static bool selfTest(){
 
 enum{P_PATH=101,P_PASS,P_CONFIRM,P_SHOW,P_ENCRYPT,P_DECRYPT,P_BROWSE,P_FOLDER,P_MENU,P_UNMENU,P_LANG,P_THEME,P_STATUS,P_TITLE=201,P_PATH_LABEL,P_PASS_LABEL,P_CONFIRM_LABEL,P_THEME_LABEL};
 static HWND gWnd,gPath,gPass,gConfirm,gStatus,gConfirmLabel;static bool gShow=false,gDark=false,gEnglish=false;static std::wstring gArgPath;static bool gArgDecrypt=false;
+static void updateThemeLabel(){
+ HWND h=GetDlgItem(gWnd,P_THEME_LABEL);
+ if(h)SetWindowTextW(h,tr(gDark?L"Тема: тёмная":L"Тема: светлая",gDark?L"Theme: dark":L"Theme: light"));
+}
+static BOOL CALLBACK disableChildTheme(HWND child,LPARAM){
+ SetWindowTheme(child,L"",L"");return TRUE;
+}
 static const wchar_t* tr(const wchar_t* ru,const wchar_t* en){return gEnglish?en:ru;}
 static HWND ctl(HWND p,const wchar_t* cls,const wchar_t* text,DWORD style,int x,int y,int w,int h,int id=0){return CreateWindowExW(0,cls,text,WS_CHILD|WS_VISIBLE|style,x,y,w,h,p,(HMENU)(INT_PTR)id,GetModuleHandleW(nullptr),nullptr);}
 static std::wstring get(HWND h){int n=GetWindowTextLengthW(h);std::wstring s(n+1,L'\0');GetWindowTextW(h,s.data(),n+1);s.resize(n);return s;}
@@ -335,7 +344,7 @@ static void applyLanguage(){
  SetWindowTextW(GetDlgItem(gWnd,P_PATH_LABEL),tr(L"Файл или папка",L"File or folder"));
  SetWindowTextW(GetDlgItem(gWnd,P_PASS_LABEL),tr(L"Пароль",L"Password"));
  SetWindowTextW(GetDlgItem(gWnd,P_CONFIRM_LABEL),tr(L"Повторите пароль",L"Confirm password"));
- SetWindowTextW(GetDlgItem(gWnd,P_THEME_LABEL),tr(L"Светлая / тёмная",L"Light / dark"));
+ updateThemeLabel();
  SetWindowTextW(GetDlgItem(gWnd,P_BROWSE),tr(L"Файл...",L"File..."));
  SetWindowTextW(GetDlgItem(gWnd,P_FOLDER),tr(L"Папка...",L"Folder..."));
  SetWindowTextW(GetDlgItem(gWnd,P_SHOW),tr(L"Показать",L"Show"));
@@ -362,11 +371,11 @@ static void controls(HWND h){
  ctl(h,L"BUTTON",tr(L"Убрать меню",L"Remove menu"),BS_PUSHBUTTON,232,280,130,27,P_UNMENU);
  gStatus=ctl(h,L"STATIC",tr(L"Оригиналы сохраняются. Результат создаётся рядом.",L"Originals are preserved. Output is created beside the source."),SS_LEFT,18,320,480,45,P_STATUS);
  HWND lang=ctl(h,L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,365,12,140,120,P_LANG);SendMessageW(lang,CB_ADDSTRING,0,(LPARAM)L"Русский");SendMessageW(lang,CB_ADDSTRING,0,(LPARAM)L"English");SendMessageW(lang,CB_SETCURSEL,0,0);
- ctl(h,L"STATIC",tr(L"Светлая / тёмная",L"Light / dark"),SS_LEFT,18,370,110,22,P_THEME_LABEL);
- HWND theme=ctl(h,TRACKBAR_CLASSW,L"",TBS_NOTICKS|TBS_TOOLTIPS,132,367,90,28,P_THEME);SendMessageW(theme,TBM_SETRANGE,TRUE,MAKELONG(0,1));SendMessageW(theme,TBM_SETPOS,TRUE,0);
+ ctl(h,L"STATIC",tr(L"Тема: светлая",L"Theme: light"),SS_LEFT,18,370,110,22,P_THEME_LABEL);
+ ctl(h,L"BUTTON",L"",BS_OWNERDRAW,132,365,94,32,P_THEME);
 }
 static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
- if(m==WM_CREATE){gWnd=h;controls(h);applyLanguage();if(!gArgPath.empty()){SetWindowTextW(gPath,gArgPath.c_str());ShowWindow(GetDlgItem(h,gArgDecrypt?P_ENCRYPT:P_DECRYPT),SW_HIDE);mode(gArgDecrypt);SetFocus(gPass);}return 0;}
+ if(m==WM_CREATE){gWnd=h;controls(h);EnumChildWindows(h,disableChildTheme,0);applyLanguage();if(!gArgPath.empty()){SetWindowTextW(gPath,gArgPath.c_str());ShowWindow(GetDlgItem(h,gArgDecrypt?P_ENCRYPT:P_DECRYPT),SW_HIDE);mode(gArgDecrypt);SetFocus(gPass);}return 0;}
  if(m==WM_COMMAND){switch(LOWORD(w)){
  case P_BROWSE:chooseFile();break;case P_FOLDER:chooseFolder();break;
  case P_SHOW:gShow=SendMessageW((HWND)l,BM_GETCHECK,0,0)==BST_CHECKED;SendMessageW(gPass,EM_SETPASSWORDCHAR,gShow?0:L'*',0);SendMessageW(gConfirm,EM_SETPASSWORDCHAR,gShow?0:L'*',0);InvalidateRect(gPass,nullptr,TRUE);InvalidateRect(gConfirm,nullptr,TRUE);mode(false);break;
@@ -374,11 +383,32 @@ static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
  case P_MENU:{std::wstring e;if(shellMenu(true,e))status(tr(L"Пункты Проводника добавлены для текущего пользователя.",L"Explorer items added for current user."));else status(e);break;}
  case P_UNMENU:{std::wstring e;if(shellMenu(false,e))status(tr(L"Пункты Проводника удалены.",L"Explorer items removed."));else status(e);break;}
  case P_LANG:gEnglish=SendMessageW((HWND)l,CB_GETCURSEL,0,0)==1;applyLanguage();break;
+ case P_THEME:gDark=!gDark;updateThemeLabel();InvalidateRect(h,nullptr,TRUE);InvalidateRect(GetDlgItem(h,P_THEME),nullptr,TRUE);break;
 
  }return 0;}
- if(m==WM_HSCROLL&&(HWND)l==GetDlgItem(h,P_THEME)){gDark=SendMessageW((HWND)l,TBM_GETPOS,0,0)==1;InvalidateRect(h,nullptr,TRUE);return 0;}
- if(m==WM_CTLCOLORSTATIC||m==WM_CTLCOLOREDIT||m==WM_CTLCOLORBTN||m==WM_CTLCOLORLISTBOX){if(gDark){HDC dc=(HDC)w;SetBkColor(dc,RGB(40,40,40));SetTextColor(dc,RGB(240,240,240));static HBRUSH b=CreateSolidBrush(RGB(40,40,40));return (LRESULT)b;}}
- if(m==WM_ERASEBKGND&&gDark){RECT r;GetClientRect(h,&r);static HBRUSH b=CreateSolidBrush(RGB(40,40,40));FillRect((HDC)w,&r,b);return 1;}
+ if(m==WM_DRAWITEM&&w==P_THEME){
+  DRAWITEMSTRUCT* d=(DRAWITEMSTRUCT*)l;HDC dc=d->hDC;RECT r=d->rcItem;
+  int old=SaveDC(dc);SetBkMode(dc,TRANSPARENT);
+  HBRUSH track=CreateSolidBrush(gDark?RGB(65,68,74):RGB(226,229,234));
+  HPEN edge=CreatePen(PS_SOLID,1,gDark?RGB(105,110,120):RGB(195,200,208));
+  HGDIOBJ op=SelectObject(dc,track),oe=SelectObject(dc,edge);
+  RoundRect(dc,r.left+1,r.top+2,r.right-1,r.bottom-2,24,24);
+  SelectObject(dc,GetStockObject(NULL_BRUSH));SelectObject(dc,GetStockObject(DC_PEN));
+  SetDCPenColor(dc,gDark?RGB(105,110,120):RGB(195,200,208));
+  SetTextColor(dc,gDark?RGB(205,208,215):RGB(120,125,134));
+  HFONT font=(HFONT)GetStockObject(DEFAULT_GUI_FONT);SelectObject(dc,font);
+  RECT left={r.left+7,r.top+4,r.left+37,r.bottom-3},right={r.right-37,r.top+4,r.right-7,r.bottom-3};
+  DrawTextW(dc,L"☀",-1,&left,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+  DrawTextW(dc,L"☾",-1,&right,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+  int cx=gDark?r.right-20:r.left+20,cy=(r.top+r.bottom)/2;
+  HBRUSH knob=CreateSolidBrush(gDark?RGB(220,224,232):RGB(255,255,255));
+  HPEN knobEdge=CreatePen(PS_SOLID,1,gDark?RGB(150,158,172):RGB(255,255,255));
+  SelectObject(dc,knob);SelectObject(dc,knobEdge);Ellipse(dc,cx-12,cy-12,cx+12,cy+12);
+  DeleteObject(knob);DeleteObject(knobEdge);DeleteObject(track);DeleteObject(edge);
+  SelectObject(dc,op);SelectObject(dc,oe);RestoreDC(dc,old);return TRUE;
+ }
+ if(m==WM_CTLCOLORSTATIC||m==WM_CTLCOLOREDIT||m==WM_CTLCOLORBTN||m==WM_CTLCOLORLISTBOX){if(gDark){HDC dc=(HDC)w;SetBkColor(dc,RGB(31,33,37));SetTextColor(dc,RGB(240,242,246));static HBRUSH b=CreateSolidBrush(RGB(31,33,37));return (LRESULT)b;}}
+ if(m==WM_ERASEBKGND&&gDark){RECT r;GetClientRect(h,&r);static HBRUSH b=CreateSolidBrush(RGB(24,26,30));FillRect((HDC)w,&r,b);return 1;}
  if(m==WM_DESTROY){PostQuitMessage(0);return 0;}return DefWindowProcW(h,m,w,l);
 }
 int WINAPI wWinMain(HINSTANCE inst,HINSTANCE,PWSTR,int show){
