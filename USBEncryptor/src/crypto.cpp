@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <cstring>
 
 #pragma comment(lib, "bcrypt.lib")
 
@@ -44,6 +45,8 @@ bool CryptGcm(bool encrypt, const Header& h, const unsigned char key[32],
     BCRYPT_ALG_HANDLE alg = nullptr;
     BCRYPT_KEY_HANDLE handle = nullptr;
     bool ok = false;
+    ULONG written = 0;
+    NTSTATUS status = 0;
     if (BCryptOpenAlgorithmProvider(&alg, BCRYPT_AES_ALGORITHM, nullptr, 0) < 0) return false;
     wchar_t mode[] = BCRYPT_CHAIN_MODE_GCM;
     if (BCryptSetProperty(alg, BCRYPT_CHAINING_MODE, reinterpret_cast<PUCHAR>(mode), sizeof(mode), 0) < 0) goto done;
@@ -57,13 +60,12 @@ bool CryptGcm(bool encrypt, const Header& h, const unsigned char key[32],
     auth.cbAuthData = static_cast<ULONG>(offsetof(Header, tag));
     auth.pbTag = tag;
     auth.cbTag = 16;
-    ULONG written = 0;
-    NTSTATUS s = encrypt
+    status = encrypt
         ? BCryptEncrypt(handle, const_cast<PUCHAR>(in.data()), static_cast<ULONG>(in.size()), &auth, nullptr, 0,
                         out.data(), static_cast<ULONG>(out.size()), &written, 0)
         : BCryptDecrypt(handle, const_cast<PUCHAR>(in.data()), static_cast<ULONG>(in.size()), &auth, nullptr, 0,
                         out.data(), static_cast<ULONG>(out.size()), &written, 0);
-    if (s >= 0 && written == in.size()) ok = true;
+    if (status >= 0 && written == in.size()) ok = true;
 done:
     if (handle) BCryptDestroyKey(handle);
     if (alg) BCryptCloseAlgorithmProvider(alg, 0);
