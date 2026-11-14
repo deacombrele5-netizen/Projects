@@ -135,8 +135,13 @@ static bool decryptFile(const fs::path& p,const std::wstring& pass,std::wstring&
 
 static bool shellMenu(bool enable,std::wstring& err){
  const wchar_t* keys[]={L"Software\\Classes\\*\\shell\\ZHCryptor.Encrypt",L"Software\\Classes\\*\\shell\\ZHCryptor.Decrypt",L"Software\\Classes\\Directory\\shell\\ZHCryptor.Encrypt",L"Software\\Classes\\Directory\\shell\\ZHCryptor.Decrypt"};
- if(!enable){for(auto k:keys){LONG s=RegDeleteTreeW(HKEY_CURRENT_USER,k);if(s!=ERROR_SUCCESS&&s!=ERROR_FILE_NOT_FOUND){err=L"Не удалось удалить пункт Проводника.";return false;}}return true;}
+ if(!enable){for(auto k:keys){LONG s=RegDeleteTreeW(HKEY_CURRENT_USER,k);if(s!=ERROR_SUCCESS&&s!=ERROR_FILE_NOT_FOUND){err=L"Не удалось удалить пункт Проводника.";return false;}}
+  RegDeleteTreeW(HKEY_CURRENT_USER,L"Software\\Classes\\ZH.Cryptor.File");
+  HKEY ext=nullptr;if(RegOpenKeyExW(HKEY_CURRENT_USER,L"Software\\Classes\\.zhc",0,KEY_WRITE,&ext)==ERROR_SUCCESS){RegDeleteValueW(ext,nullptr);RegCloseKey(ext);}SHChangeNotify(SHCNE_ASSOCCHANGED,SHCNF_IDLIST,nullptr,nullptr);return true;}
  wchar_t exe[MAX_PATH]{};if(!GetModuleFileNameW(nullptr,exe,MAX_PATH)){err=L"Не удалось определить путь программы.";return false;}
+ HKEY ext=nullptr;if(RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\Classes\\.zhc",0,nullptr,0,KEY_WRITE,nullptr,&ext,nullptr)==ERROR_SUCCESS){const wchar_t* prog=L"ZH.Cryptor.File";RegSetValueExW(ext,nullptr,0,REG_SZ,(const BYTE*)prog,(DWORD)((wcslen(prog)+1)*sizeof(wchar_t)));RegCloseKey(ext);}
+ HKEY prog=nullptr;if(RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\Classes\\ZH.Cryptor.File\\DefaultIcon",0,nullptr,0,KEY_WRITE,nullptr,&prog,nullptr)==ERROR_SUCCESS){std::wstring icon=L"\\\""+std::wstring(exe)+L"\\\",101";RegSetValueExW(prog,nullptr,0,REG_SZ,(const BYTE*)icon.c_str(),(DWORD)((icon.size()+1)*sizeof(wchar_t)));RegCloseKey(prog);}
+ if(RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\Classes\\ZH.Cryptor.File\\shell\\open\\command",0,nullptr,0,KEY_WRITE,nullptr,&prog,nullptr)==ERROR_SUCCESS){std::wstring cmd=L"\\\""+std::wstring(exe)+L"\\\" --decrypt \\\"%1\\\"";RegSetValueExW(prog,nullptr,0,REG_SZ,(const BYTE*)cmd.c_str(),(DWORD)((cmd.size()+1)*sizeof(wchar_t)));RegCloseKey(prog);}
  for(int i=0;i<4;i++){HKEY h=nullptr;LONG s=RegCreateKeyExW(HKEY_CURRENT_USER,keys[i],0,nullptr,0,KEY_WRITE,nullptr,&h,nullptr);if(s!=ERROR_SUCCESS){err=L"Не удалось добавить меню Проводника.";return false;}
   const wchar_t* label=(i%2==0)?L"Зашифровать копию — ZH Cryptor":L"Расшифровать копию — ZH Cryptor";RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)label,(DWORD)((wcslen(label)+1)*sizeof(wchar_t)));RegCloseKey(h);
   std::wstring cmdkey=std::wstring(keys[i])+L"\\command";if(RegCreateKeyExW(HKEY_CURRENT_USER,cmdkey.c_str(),0,nullptr,0,KEY_WRITE,nullptr,&h,nullptr)!=ERROR_SUCCESS){err=L"Не удалось настроить команду меню.";return false;}
@@ -164,7 +169,7 @@ static bool setFolderLockIcon(const fs::path& folder){
  SetFileAttributesW(ico.c_str(),FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM);
  SetFileAttributesW(ini.c_str(),FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM);
  SetFileAttributesW(folder.c_str(),original|FILE_ATTRIBUTE_SYSTEM);
- SHChangeNotify(SHCNE_UPDATEITEM,SHCNF_PATH,folder.c_str(),nullptr);return true;
+ SHChangeNotify(SHCNE_ATTRIBUTES|SHCNE_UPDATEITEM,SHCNF_PATH,folder.c_str(),nullptr);return true;
 }
 static void removeFolderLockIcon(const fs::path& folder){
  fs::path ini=folder/L"desktop.ini",ico=folder/L".zhcryptor.ico";
@@ -173,7 +178,7 @@ static void removeFolderLockIcon(const fs::path& folder){
  DWORD original=GetFileAttributesW(folder.c_str());auto pos=txt.find("ORIGINAL_FOLDER_ATTRS=");
  if(pos!=std::string::npos){pos+=22;try{DWORD saved=(DWORD)std::stoul(txt.substr(pos));if(original!=INVALID_FILE_ATTRIBUTES)SetFileAttributesW(folder.c_str(),saved);}catch(...){}}
  SetFileAttributesW(ini.c_str(),FILE_ATTRIBUTE_NORMAL);SetFileAttributesW(ico.c_str(),FILE_ATTRIBUTE_NORMAL);
- DeleteFileW(ini.c_str());DeleteFileW(ico.c_str());SHChangeNotify(SHCNE_UPDATEITEM,SHCNF_PATH,folder.c_str(),nullptr);
+ DeleteFileW(ini.c_str());DeleteFileW(ico.c_str());SHChangeNotify(SHCNE_ATTRIBUTES|SHCNE_UPDATEITEM,SHCNF_PATH,folder.c_str(),nullptr);
 }
 
 enum{P_PATH=101,P_PASS,P_CONFIRM,P_SHOW,P_ENCRYPT,P_DECRYPT,P_BROWSE,P_FOLDER,P_MENU,P_UNMENU,P_LANG,P_THEME,P_STATUS,P_TITLE=201,P_PATH_LABEL,P_PASS_LABEL,P_CONFIRM_LABEL};
@@ -192,10 +197,15 @@ static void run(bool dec){
  int good=0,bad=0;std::wstring last;
  try{fs::path p(path);std::vector<fs::path> files;
   if(fs::is_regular_file(p))files.push_back(p);
-  else if(fs::is_directory(p)){for(auto it=fs::recursive_directory_iterator(p,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it)if(it->is_regular_file()&&(dec?it->path().extension()==L".zhc":it->path().extension()!=L".zhc"))files.push_back(it->path());}
+  else if(fs::is_directory(p)){for(auto it=fs::recursive_directory_iterator(p,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it)if(it->is_regular_file()&&(dec?it->path().extension()==L".zhc":(it->path().extension()!=L".zhc"&&it->path().filename()!=L"desktop.ini"&&it->path().filename()!=L".zhcryptor.ico"&&it->path().extension()!=L".zhctmp")))files.push_back(it->path());}
   else{last=L"Путь не найден.";bad++;}
   for(const auto& f:files){std::wstring out,err;bool ok=dec?decryptFile(f,pass,out,err):encryptFile(f,pass,out,err);if(ok){good++;last=out;}else{bad++;last=err;}}
-  if(good>0&&fs::is_directory(p)){if(dec){if(!hasEncrypted(p))removeFolderLockIcon(p);}else setFolderLockIcon(p);}
+  if(good>0){
+   std::vector<fs::path> dirs;
+   if(fs::is_directory(p)){dirs.push_back(p);for(auto it=fs::recursive_directory_iterator(p,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it)if(it->is_directory())dirs.push_back(it->path());}
+   else dirs.push_back(p.parent_path());
+   for(const auto& d:dirs){if(dec){if(!hasEncrypted(d))removeFolderLockIcon(d);}else if(hasEncrypted(d))setFolderLockIcon(d);}
+  }
  }catch(...){bad++;last=L"Ошибка доступа к папке или файлам.";}
  SecureZeroMemory(pass.data(),pass.size()*sizeof(wchar_t));SecureZeroMemory(confirm.data(),confirm.size()*sizeof(wchar_t));
  status(tr(L"Успешно: ",L"Done: ")+std::to_wstring(good)+tr(L"; ошибок: ",L"; errors: ")+std::to_wstring(bad)+(last.empty()?L"":L" — "+last));
@@ -236,7 +246,7 @@ static void controls(HWND h){
  ctl(h,L"BUTTON",tr(L"Тёмная тема",L"Dark theme"),BS_AUTOCHECKBOX,18,370,140,23,P_THEME);
 }
 static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
- if(m==WM_CREATE){gWnd=h;controls(h);applyLanguage();if(!gArgPath.empty())SetWindowTextW(gPath,gArgPath.c_str());mode(gArgDecrypt);return 0;}
+ if(m==WM_CREATE){gWnd=h;controls(h);applyLanguage();if(!gArgPath.empty()){SetWindowTextW(gPath,gArgPath.c_str());ShowWindow(GetDlgItem(h,gArgDecrypt?P_ENCRYPT:P_DECRYPT),SW_HIDE);mode(gArgDecrypt);SetFocus(gPass);}return 0;}
  if(m==WM_COMMAND){switch(LOWORD(w)){
  case P_BROWSE:chooseFile();break;case P_FOLDER:chooseFolder();break;
  case P_SHOW:gShow=SendMessageW((HWND)l,BM_GETCHECK,0,0)==BST_CHECKED;SendMessageW(gPass,EM_SETPASSWORDCHAR,gShow?0:L'*',0);SendMessageW(gConfirm,EM_SETPASSWORDCHAR,gShow?0:L'*',0);InvalidateRect(gPass,nullptr,TRUE);InvalidateRect(gConfirm,nullptr,TRUE);mode(false);break;
