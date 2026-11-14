@@ -31,7 +31,7 @@ jobs:
         shell: pwsh
         working-directory: USBEncryptor
         run: |
-          cl /nologo /std:c++17 /O2 /EHsc /MT /DUNICODE /D_UNICODE src\main.cpp /link /SUBSYSTEM:WINDOWS bcrypt.lib comdlg32.lib shell32.lib ole32.lib /OUT:USBEncryptor.exe
+          cl /nologo /std:c++17 /O2 /EHsc /MT /DUNICODE /D_UNICODE src\main.cpp /link /SUBSYSTEM:WINDOWS bcrypt.lib comdlg32.lib shell32.lib ole32.lib user32.lib gdi32.lib comctl32.lib /OUT:USBEncryptor.exe
           if ($LASTEXITCODE -ne 0) { throw "MSVC build failed" }
           New-Item -ItemType Directory -Force package | Out-Null
           Copy-Item USBEncryptor.exe package\
