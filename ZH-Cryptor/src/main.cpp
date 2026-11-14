@@ -157,7 +157,23 @@ static void run(bool dec){
  SecureZeroMemory(pass.data(),pass.size()*sizeof(wchar_t));SecureZeroMemory(confirm.data(),confirm.size()*sizeof(wchar_t));
  status(tr(L"Успешно: ",L"Done: ")+std::to_wstring(good)+tr(L"; ошибок: ",L"; errors: ")+std::to_wstring(bad)+(last.empty()?L"":L" — "+last));
 }
-static void applyLanguage(){\n SetWindowTextW(gWnd,L"ZH Cryptor");\n SetWindowTextW(GetDlgItem(gWnd,P_TITLE),L"ZH Cryptor");\n SetWindowTextW(GetDlgItem(gWnd,P_PATH_LABEL),tr(L"Файл или папка",L"File or folder"));\n SetWindowTextW(GetDlgItem(gWnd,P_PASS_LABEL),tr(L"Пароль",L"Password"));\n SetWindowTextW(GetDlgItem(gWnd,P_CONFIRM_LABEL),tr(L"Повторите пароль",L"Confirm password"));\n SetWindowTextW(GetDlgItem(gWnd,P_BROWSE),tr(L"Файл...",L"File..."));\n SetWindowTextW(GetDlgItem(gWnd,P_FOLDER),tr(L"Папка...",L"Folder..."));\n SetWindowTextW(GetDlgItem(gWnd,P_SHOW),tr(L"Показать",L"Show"));\n SetWindowTextW(GetDlgItem(gWnd,P_ENCRYPT),tr(L"Зашифровать копию",L"Encrypt a copy"));\n SetWindowTextW(GetDlgItem(gWnd,P_DECRYPT),tr(L"Расшифровать копию",L"Decrypt a copy"));\n SetWindowTextW(GetDlgItem(gWnd,P_MENU),tr(L"Добавить меню Проводника",L"Add Explorer menu"));\n SetWindowTextW(GetDlgItem(gWnd,P_UNMENU),tr(L"Убрать меню",L"Remove menu"));\n SetWindowTextW(GetDlgItem(gWnd,P_THEME),tr(L"Тёмная тема",L"Dark theme"));\n SetWindowTextW(gStatus,tr(L"Оригиналы сохраняются. Результат создаётся рядом.",L"Originals are preserved. Output is created beside the source."));\n}\nstatic void controls(HWND h){
+static void applyLanguage(){
+ SetWindowTextW(gWnd,L"ZH Cryptor");
+ SetWindowTextW(GetDlgItem(gWnd,P_TITLE),L"ZH Cryptor");
+ SetWindowTextW(GetDlgItem(gWnd,P_PATH_LABEL),tr(L"Файл или папка",L"File or folder"));
+ SetWindowTextW(GetDlgItem(gWnd,P_PASS_LABEL),tr(L"Пароль",L"Password"));
+ SetWindowTextW(GetDlgItem(gWnd,P_CONFIRM_LABEL),tr(L"Повторите пароль",L"Confirm password"));
+ SetWindowTextW(GetDlgItem(gWnd,P_BROWSE),tr(L"Файл...",L"File..."));
+ SetWindowTextW(GetDlgItem(gWnd,P_FOLDER),tr(L"Папка...",L"Folder..."));
+ SetWindowTextW(GetDlgItem(gWnd,P_SHOW),tr(L"Показать",L"Show"));
+ SetWindowTextW(GetDlgItem(gWnd,P_ENCRYPT),tr(L"Зашифровать копию",L"Encrypt a copy"));
+ SetWindowTextW(GetDlgItem(gWnd,P_DECRYPT),tr(L"Расшифровать копию",L"Decrypt a copy"));
+ SetWindowTextW(GetDlgItem(gWnd,P_MENU),tr(L"Добавить меню Проводника",L"Add Explorer menu"));
+ SetWindowTextW(GetDlgItem(gWnd,P_UNMENU),tr(L"Убрать меню",L"Remove menu"));
+ SetWindowTextW(GetDlgItem(gWnd,P_THEME),tr(L"Тёмная тема",L"Dark theme"));
+ SetWindowTextW(gStatus,tr(L"Оригиналы сохраняются. Результат создаётся рядом.",L"Originals are preserved. Output is created beside the source."));
+}
+static void controls(HWND h){
  ctl(h,L"STATIC",L"ZH Cryptor",SS_LEFT,18,12,250,30,P_TITLE);
  ctl(h,L"STATIC",tr(L"Файл или папка",L"File or folder"),0,18,52,200,20,P_PATH_LABEL);
  gPath=ctl(h,L"EDIT",L"",WS_BORDER|ES_AUTOHSCROLL,18,74,390,25,P_PATH);
