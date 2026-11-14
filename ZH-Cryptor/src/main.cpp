@@ -26,6 +26,7 @@
 #pragma comment(lib,"shell32.lib")
 #pragma comment(lib,"advapi32.lib")
 namespace fs=std::filesystem;
+static void registerZhcAssociation();
 static constexpr uint32_t KDF_ROUNDS=600000;
 static constexpr uint32_t CHUNK_BYTES=4u*1024u*1024u;
 static constexpr char MAGIC[8]={'Z','H','C','R','Y','2','\0','\0'};
