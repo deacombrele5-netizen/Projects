@@ -1,0 +1,47 @@
+name: Build USB Encryptor
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "USBEncryptor/**"
+      - ".github/workflows/build-usb-encryptor.yml"
+  pull_request:
+    paths:
+      - "USBEncryptor/**"
+      - ".github/workflows/build-usb-encryptor.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build portable EXE
+        shell: pwsh
+        working-directory: USBEncryptor
+        run: |
+          cl /nologo /std:c++17 /O2 /EHsc /MT /DUNICODE /D_UNICODE src\main.cpp /link /SUBSYSTEM:WINDOWS bcrypt.lib comdlg32.lib shell32.lib ole32.lib /OUT:USBEncryptor.exe
+          if ($LASTEXITCODE -ne 0) { throw "MSVC build failed" }
+          New-Item -ItemType Directory -Force package | Out-Null
+          Copy-Item USBEncryptor.exe package\
+          Copy-Item README.md package\README.txt
+          Compress-Archive -Path package\* -DestinationPath USBEncryptor-Portable-x64.zip -Force
+
+      - name: Upload portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: USBEncryptor-Portable-x64
+          path: USBEncryptor/USBEncryptor-Portable-x64.zip
+          if-no-files-found: error
+          retention-days: 30
