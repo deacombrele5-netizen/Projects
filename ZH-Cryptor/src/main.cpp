@@ -67,7 +67,11 @@ static bool finalizeTemp(const fs::path& tmp,const fs::path& dst,std::wstring& o
  out=dst.wstring();return true;
 }
 static bool finalizeTempInPlace(const fs::path& tmp,const fs::path& original,std::wstring& out,std::wstring& err){
- if(!ReplaceFileW(original.c_str(),tmp.c_str(),nullptr,REPLACEFILE_WRITE_THROUGH,nullptr,nullptr)){
+ HANDLE h=CreateFileW(tmp.c_str(),GENERIC_WRITE,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+ if(h==INVALID_HANDLE_VALUE){DWORD e=GetLastError();DeleteFileW(tmp.c_str());err=L"Не удалось открыть временный файл для фиксации данных (код Windows: "+std::to_wstring(e)+L").";return false;}
+ BOOL flushed=FlushFileBuffers(h);DWORD flushError=GetLastError();CloseHandle(h);
+ if(!flushed){DeleteFileW(tmp.c_str());err=L"Не удалось зафиксировать временный файл на диске (код Windows: "+std::to_wstring(flushError)+L").";return false;}
+ if(!ReplaceFileW(original.c_str(),tmp.c_str(),nullptr,0,nullptr,nullptr)){
   DWORD e=GetLastError();DeleteFileW(tmp.c_str());
   err=L"Не удалось атомарно заменить исходный файл (код Windows: "+std::to_wstring(e)+L"). Исходник не изменён.";return false;
  }
@@ -299,6 +303,10 @@ static void run(bool dec){
  std::wstring path=get(gPath),pass=get(gPass),confirm=get(gConfirm);
  if(path.empty()||pass.empty()){MessageBoxW(gWnd,tr(L"Укажи файл или папку и введи пароль хотя бы из одного символа.",L"Choose a file or folder and enter at least one password character."),L"ZH Cryptor",MB_ICONWARNING);return;}
  if(!dec&&!gShow&&pass!=confirm){MessageBoxW(gWnd,tr(L"Пароли не совпадают.",L"Passwords do not match."),L"ZH Cryptor",MB_ICONWARNING);return;}
+ const wchar_t* warning=dec
+  ?tr(L"Расшифровка заменит зашифрованные файлы исходным содержимым прямо на месте. После успешной операции отменить замену нельзя. Продолжить?",L"Decryption will replace encrypted files with plaintext in place. This cannot be undone after success. Continue?")
+  :tr(L"Шифрование заменит исходные файлы зашифрованными данными прямо на месте. Программа временно подготовит результат и заменит файл только после успешной проверки записи. После успеха вернуть исходник без пароля нельзя. Продолжить?",L"Encryption will replace the original files with encrypted data in place. A temporary staging file is used and the source is replaced only after successful writing. After success, the original cannot be restored without the password. Continue?");
+ if(MessageBoxW(gWnd,warning,L"ZH Cryptor",MB_YESNO|MB_ICONWARNING|MB_DEFBUTTON2)!=IDYES)return;
  int good=0,bad=0;std::wstring last;
  try{fs::path p(path);std::vector<fs::path> files;
   if(fs::is_regular_file(p)){
