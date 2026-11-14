@@ -102,7 +102,7 @@ static bool encryptFile(const fs::path& p,const std::wstring& pass,std::wstring&
  SecureZeroMemory(key,32);wipe(plain);wipe(cipher);wipe(aad);
  file.flush();if(!file)ok=false;file.close();
  if(!ok){DeleteFileW(tmp.c_str());if(err.empty())err=L"Не удалось записать зашифрованный файл.";return false;}
- bool saved=finalizeTemp(tmp,dst,out,err);if(saved)registerZhcAssociation();return saved;
+ return finalizeTemp(tmp,dst,out,err);
 }
 static bool decryptFile(const fs::path& p,const std::wstring& pass,std::wstring& out,std::wstring& err){
  std::ifstream in(p,std::ios::binary);if(!in){err=L"Не удалось открыть зашифрованный файл.";return false;}
@@ -134,6 +134,31 @@ static bool decryptFile(const fs::path& p,const std::wstring& pass,std::wstring&
  return finalizeTemp(tmp,dst,out,err);
 }
 
+
+
+static bool selfTest(){
+ std::error_code ec;fs::path root=fs::temp_directory_path()/("zhcryptor-selftest-"+std::to_wstring(GetCurrentProcessId()));
+ fs::remove_all(root,ec);ec.clear();if(!fs::create_directories(root,ec)||ec)return false;
+ bool ok=true;const std::wstring pass=L"x";
+ std::vector<size_t> sizes={0,CHUNK_BYTES+37};
+ for(size_t n:sizes){
+  fs::path src=root/(L"input-"+std::to_wstring(n)+L".bin");
+  std::vector<BYTE> expected(n);
+  for(size_t i=0;i<n;++i)expected[i]=(BYTE)((i*31u+17u)&255u);
+  {std::ofstream o(src,std::ios::binary|std::ios::trunc);if(n)o.write((const char*)expected.data(),(std::streamsize)n);if(!o){ok=false;break;}}
+  std::wstring enc,plain,err;
+  if(!encryptFile(src,pass,enc,err)){ok=false;break;}
+  if(!decryptFile(fs::path(enc),pass,plain,err)){ok=false;break;}
+  std::ifstream in(fs::path(plain),std::ios::binary);std::vector<BYTE> actual((std::istreambuf_iterator<char>(in)),{});
+  if(actual!=expected){ok=false;break;}
+  std::wstring badOut,badErr;if(decryptFile(fs::path(enc),L"wrong",badOut,badErr)){ok=false;break;}
+  fs::path corrupt=root/(L"corrupt-"+std::to_wstring(n)+L".zhc");fs::copy_file(fs::path(enc),corrupt,fs::copy_options::overwrite_existing,ec);
+  if(ec){ok=false;break;}
+  {std::fstream io(corrupt,std::ios::binary|std::ios::in|std::ios::out);io.seekg(-1,std::ios::end);char c=0;io.read(&c,1);c^=0x5a;io.seekp(-1,std::ios::end);io.write(&c,1);if(!io){ok=false;break;}}
+  if(decryptFile(corrupt,pass,badOut,badErr)){ok=false;break;}
+ }
+ fs::remove_all(root,ec);return ok&&!ec;
+}
 
 static void registerZhcAssociation(){
  wchar_t exe[MAX_PATH]{};if(!GetModuleFileNameW(nullptr,exe,MAX_PATH))return;
@@ -216,7 +241,7 @@ static void run(bool dec){
   if(fs::is_regular_file(p))files.push_back(p);
   else if(fs::is_directory(p)){for(auto it=fs::recursive_directory_iterator(p,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it)if(it->is_regular_file()&&(dec?it->path().extension()==L".zhc":(it->path().extension()!=L".zhc"&&it->path().filename()!=L"desktop.ini"&&it->path().filename()!=L".zhcryptor.ico"&&it->path().extension()!=L".zhctmp")))files.push_back(it->path());}
   else{last=L"Путь не найден.";bad++;}
-  for(const auto& f:files){std::wstring out,err;bool ok=dec?decryptFile(f,pass,out,err):encryptFile(f,pass,out,err);if(ok){good++;last=out;}else{bad++;last=err;}}
+  for(const auto& f:files){std::wstring out,err;bool ok=dec?decryptFile(f,pass,out,err):encryptFile(f,pass,out,err);if(ok){good++;last=out;}else{bad++;last=err;}}\n  if(good>0&&!dec)registerZhcAssociation();
   if(good>0){
    std::vector<fs::path> dirs;
    if(fs::is_directory(p)){dirs.push_back(p);for(auto it=fs::recursive_directory_iterator(p,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it)if(it->is_directory())dirs.push_back(it->path());}
@@ -281,7 +306,7 @@ static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
  if(m==WM_DESTROY){PostQuitMessage(0);return 0;}return DefWindowProcW(h,m,w,l);
 }
 int WINAPI wWinMain(HINSTANCE inst,HINSTANCE,PWSTR,int show){
- int argc=0;LPWSTR* argv=CommandLineToArgvW(GetCommandLineW(),&argc);if(argv&&argc>=3&&(wcscmp(argv[1],L"--encrypt")==0||wcscmp(argv[1],L"--decrypt")==0)){gArgDecrypt=wcscmp(argv[1],L"--decrypt")==0;gArgPath=argv[2];}if(argv)LocalFree(argv);
+ int argc=0;LPWSTR* argv=CommandLineToArgvW(GetCommandLineW(),&argc);if(argv&&argc>=2&&wcscmp(argv[1],L"--self-test")==0){LocalFree(argv);return selfTest()?0:2;}if(argv&&argc>=3&&(wcscmp(argv[1],L"--encrypt")==0||wcscmp(argv[1],L"--decrypt")==0)){gArgDecrypt=wcscmp(argv[1],L"--decrypt")==0;gArgPath=argv[2];}if(argv)LocalFree(argv);
  INITCOMMONCONTROLSEX ic{sizeof(ic),ICC_STANDARD_CLASSES};InitCommonControlsEx(&ic);
  WNDCLASSW wc{};wc.lpfnWndProc=proc;wc.hInstance=inst;wc.hCursor=LoadCursor(nullptr,IDC_ARROW);wc.hIcon=LoadIconW(inst,MAKEINTRESOURCEW(101));wc.hbrBackground=(HBRUSH)(COLOR_BTNFACE+1);wc.lpszClassName=L"ZHCryptorWindow";RegisterClassW(&wc);
  HWND h=CreateWindowExW(WS_EX_APPWINDOW,wc.lpszClassName,L"ZH Cryptor",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,CW_USEDEFAULT,CW_USEDEFAULT,535,445,nullptr,nullptr,inst,nullptr);if(!h)return 1;
