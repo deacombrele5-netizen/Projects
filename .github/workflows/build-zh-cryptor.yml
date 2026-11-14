@@ -24,6 +24,8 @@ jobs:
         run: cmake -S ZH-Cryptor -B build -A ${{ matrix.arch }} -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build --config Release --parallel
+      - name: Run crypto self-test
+        run: build/Release/ZHCryptor.exe --self-test
       - name: Prepare portable EXE and ZIP
         shell: pwsh
         run: |
