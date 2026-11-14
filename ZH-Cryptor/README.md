@@ -8,9 +8,10 @@ ZH Cryptor is a small, offline, portable Win32 utility for encrypting copies of 
 - PBKDF2-HMAC-SHA-256 with 600,000 rounds, random salt and nonce.
 - Password confirmation when hidden; a single entry when password visibility is enabled.
 - Optional per-user Explorer context-menu entries for files and folders (HKCU; no administrator rights).
+- On folder encryption, adds a gold-lock folder icon using a hidden `desktop.ini` and `.zhcryptor.ico` in that folder; removes this decoration after the last ZH Cryptor file is decrypted. Existing custom `desktop.ini` files are left untouched.
 - Encrypts to a sibling `.zhc` file. Decrypts to a separate restored file.
 - Never deletes or overwrites the source.
-- No network access, cloud service, telemetry, settings files or application logs.
+- No network access, cloud service, telemetry, settings files or application logs. Folder-icon decoration does add two hidden metadata files to the selected folder.
 - x64 and Win32 builds; statically linked MSVC runtime.
 
 ## Compatibility
