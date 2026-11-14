@@ -180,14 +180,12 @@ static bool selfTestCrypto(){
 static bool registerZhcAssociation(){
  wchar_t exe[MAX_PATH]{};if(!GetModuleFileNameW(nullptr,exe,MAX_PATH))return false;
  HKEY h=nullptr;
- if(RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\Classes\\.zhc",0,nullptr,0,KEY_WRITE,nullptr,&h,nullptr)!=ERROR_SUCCESS)return false;
- const wchar_t* prog=L"ZH.Cryptor.File";
- LONG rs=RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)prog,(DWORD)((wcslen(prog)+1)*sizeof(wchar_t)));
- RegCloseKey(h);if(rs!=ERROR_SUCCESS)return false;
- if(RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\Classes\\ZH.Cryptor.File\\DefaultIcon",0,nullptr,0,KEY_WRITE,nullptr,&h,nullptr)!=ERROR_SUCCESS)return false;
+ if(RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\Classes\\SystemFileAssociations\\.zhc\\DefaultIcon",0,nullptr,0,KEY_WRITE,nullptr,&h,nullptr)!=ERROR_SUCCESS)return false;
  std::wstring icon=std::wstring(1,L'"')+std::wstring(exe)+std::wstring(1,L'"')+L",0";
- rs=RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)icon.c_str(),(DWORD)((icon.size()+1)*sizeof(wchar_t)));
+ LONG rs=RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)icon.c_str(),(DWORD)((icon.size()+1)*sizeof(wchar_t)));
  RegCloseKey(h);if(rs!=ERROR_SUCCESS)return false;
+ if(RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\Classes\\.zhc\\OpenWithProgids",0,nullptr,0,KEY_WRITE,nullptr,&h,nullptr)!=ERROR_SUCCESS)return false;
+ rs=RegSetValueExW(h,L"ZH.Cryptor.File",0,REG_NONE,nullptr,0);RegCloseKey(h);if(rs!=ERROR_SUCCESS)return false;
  if(RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\Classes\\ZH.Cryptor.File\\shell\\open\\command",0,nullptr,0,KEY_WRITE,nullptr,&h,nullptr)!=ERROR_SUCCESS)return false;
  std::wstring cmd=std::wstring(1,L'"')+std::wstring(exe)+std::wstring(1,L'"')+L" --decrypt "+std::wstring(1,L'"')+L"%1"+std::wstring(1,L'"');
  rs=RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)cmd.c_str(),(DWORD)((cmd.size()+1)*sizeof(wchar_t)));
@@ -199,7 +197,8 @@ static bool shellMenu(bool enable,std::wstring& err){
  const wchar_t* keys[]={L"Software\\Classes\\*\\shell\\ZHCryptor.Encrypt",L"Software\\Classes\\*\\shell\\ZHCryptor.Decrypt",L"Software\\Classes\\Directory\\shell\\ZHCryptor.Encrypt",L"Software\\Classes\\Directory\\shell\\ZHCryptor.Decrypt"};
  if(!enable){for(auto k:keys){LONG s=RegDeleteTreeW(HKEY_CURRENT_USER,k);if(s!=ERROR_SUCCESS&&s!=ERROR_FILE_NOT_FOUND){err=L"Не удалось удалить пункт Проводника.";return false;}}
   RegDeleteTreeW(HKEY_CURRENT_USER,L"Software\\Classes\\ZH.Cryptor.File");
-  HKEY ext=nullptr;if(RegOpenKeyExW(HKEY_CURRENT_USER,L"Software\\Classes\\.zhc",0,KEY_WRITE,&ext)==ERROR_SUCCESS){RegDeleteValueW(ext,nullptr);RegCloseKey(ext);}SHChangeNotify(SHCNE_ASSOCCHANGED,SHCNF_IDLIST,nullptr,nullptr);return true;}
+  RegDeleteTreeW(HKEY_CURRENT_USER,L"Software\\Classes\\SystemFileAssociations\\.zhc\\DefaultIcon");
+  HKEY ext=nullptr;if(RegOpenKeyExW(HKEY_CURRENT_USER,L"Software\\Classes\\.zhc\\OpenWithProgids",0,KEY_WRITE,&ext)==ERROR_SUCCESS){RegDeleteValueW(ext,L"ZH.Cryptor.File");RegCloseKey(ext);}SHChangeNotify(SHCNE_ASSOCCHANGED,SHCNF_IDLIST,nullptr,nullptr);return true;}
  wchar_t exe[MAX_PATH]{};if(!GetModuleFileNameW(nullptr,exe,MAX_PATH)){err=L"Не удалось определить путь программы.";return false;}
  if(!registerZhcAssociation()){err=L"Не удалось зарегистрировать значок файлов .zhc.";return false;}
  for(int i=0;i<4;i++){HKEY h=nullptr;LONG s=RegCreateKeyExW(HKEY_CURRENT_USER,keys[i],0,nullptr,0,KEY_WRITE,nullptr,&h,nullptr);if(s!=ERROR_SUCCESS){err=L"Не удалось добавить меню Проводника.";return false;}
