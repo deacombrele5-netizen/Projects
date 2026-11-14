@@ -1,0 +1,382 @@
+#include <windows.h>
+#include <bcrypt.h>
+#include <commctrl.h>
+#include <commdlg.h>
+#include <shlobj.h>
+#include <shellapi.h>
+#include <filesystem>
+#include <fstream>
+#include <vector>
+#include <string>
+#include <cstring>
+#include <cstdint>
+#include <cstddef>
+#include <cwchar>
+#include <sstream>
+#include <iterator>
+#include <algorithm>
+
+#pragma comment(lib,"bcrypt.lib")
+#pragma comment(lib,"comctl32.lib")
+#pragma comment(lib,"comdlg32.lib")
+#pragma comment(lib,"shell32.lib")
+#pragma comment(lib,"advapi32.lib")
+namespace fs=std::filesystem;
+static bool registerZhcAssociation();
+static bool selfTest();
+static constexpr uint32_t KDF_ROUNDS=600000;
+static constexpr uint32_t CHUNK_BYTES=4u*1024u*1024u;
+static constexpr char MAGIC[8]={'Z','H','C','R','Y','2','\0','\0'};
+#pragma pack(push,1)
+struct Header { char magic[8]; uint32_t version; uint32_t rounds; uint64_t size; BYTE salt[16]; };
+struct ChunkHeader { uint32_t size; BYTE nonce[12]; BYTE tag[16]; };
+#pragma pack(pop)
+
+static bool randomBytes(BYTE* p,ULONG n){return BCryptGenRandom(nullptr,p,n,BCRYPT_USE_SYSTEM_PREFERRED_RNG)>=0;}
+static void wipe(std::vector<BYTE>& v){if(!v.empty())SecureZeroMemory(v.data(),v.size());}
+static bool derive(const std::wstring& pass,const Header& h,BYTE key[32]){
+ BCRYPT_ALG_HANDLE a=nullptr;if(BCryptOpenAlgorithmProvider(&a,BCRYPT_SHA256_ALGORITHM,nullptr,BCRYPT_ALG_HANDLE_HMAC_FLAG)<0)return false;
+ auto st=BCryptDeriveKeyPBKDF2(a,(PUCHAR)pass.data(),(ULONG)(pass.size()*sizeof(wchar_t)),(PUCHAR)h.salt,16,h.rounds,key,32,0);
+ BCryptCloseAlgorithmProvider(a,0);return st>=0;
+}
+static bool gcmChunk(bool enc,const BYTE nonce[12],const BYTE key[32],const BYTE* aad,ULONG aadLen,const BYTE* input,ULONG length,BYTE* output,BYTE tag[16]){
+ BCRYPT_ALG_HANDLE a=nullptr;BCRYPT_KEY_HANDLE k=nullptr;bool ok=false;ULONG written=0;
+ if(BCryptOpenAlgorithmProvider(&a,BCRYPT_AES_ALGORITHM,nullptr,0)<0)return false;
+ wchar_t mode[]=BCRYPT_CHAIN_MODE_GCM;
+ if(BCryptSetProperty(a,BCRYPT_CHAINING_MODE,(PUCHAR)mode,sizeof(mode),0)<0)goto end;
+ if(BCryptGenerateSymmetricKey(a,&k,nullptr,0,(PUCHAR)key,32,0)<0)goto end;
+ {BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO ai;BCRYPT_INIT_AUTH_MODE_INFO(ai);
+  BYTE dummy=0;
+  ai.pbNonce=(PUCHAR)nonce;ai.cbNonce=12;ai.pbAuthData=(PUCHAR)aad;ai.cbAuthData=aadLen;ai.pbTag=tag;ai.cbTag=16;
+  NTSTATUS st=enc?BCryptEncrypt(k,(PUCHAR)(length?input:&dummy),length,&ai,nullptr,0,length?output:&dummy,length,&written,0)
+                 :BCryptDecrypt(k,(PUCHAR)(length?input:&dummy),length,&ai,nullptr,0,length?output:&dummy,length,&written,0);
+  ok=st>=0&&written==length;
+ }
+end: if(k)BCryptDestroyKey(k);if(a)BCryptCloseAlgorithmProvider(a,0);return ok;
+}
+static bool uniqueOutput(const fs::path& wanted,fs::path& dst){
+ dst=wanted;
+ for(unsigned i=1;fs::exists(dst);++i){
+  dst=wanted.parent_path()/(wanted.stem().wstring()+L" ("+std::to_wstring(i)+L")"+wanted.extension().wstring());
+  if(i>10000)return false;
+ }
+ return true;
+}
+static bool finalizeTemp(const fs::path& tmp,const fs::path& dst,std::wstring& out,std::wstring& err){
+ if(!MoveFileExW(tmp.c_str(),dst.c_str(),MOVEFILE_WRITE_THROUGH)){DeleteFileW(tmp.c_str());err=L"Не удалось завершить запись результата.";return false;}
+ out=dst.wstring();return true;
+}
+static bool finalizeTempInPlace(const fs::path& tmp,const fs::path& original,std::wstring& out,std::wstring& err){
+ if(!ReplaceFileW(original.c_str(),tmp.c_str(),nullptr,REPLACEFILE_WRITE_THROUGH,nullptr,nullptr)){
+  DWORD e=GetLastError();DeleteFileW(tmp.c_str());
+  err=L"Не удалось атомарно заменить исходный файл (код Windows: "+std::to_wstring(e)+L"). Исходник не изменён.";return false;
+ }
+ out=original.wstring();return true;
+}
+static bool isZhcFile(const fs::path& p){
+ std::ifstream in(p,std::ios::binary);if(!in)return false;
+ char magic[8]{};return (bool)in.read(magic,sizeof(magic))&&memcmp(magic,MAGIC,sizeof(magic))==0;
+}
+
+static bool createTempPath(const fs::path& dst,fs::path& tmp){
+ static const wchar_t hex[]=L"0123456789abcdef";
+ for(int attempt=0;attempt<64;++attempt){
+  BYTE rnd[16]{};if(!randomBytes(rnd,sizeof(rnd)))return false;
+  std::wstring suffix=L".zhctmp.";
+  for(BYTE b:rnd){suffix.push_back(hex[b>>4]);suffix.push_back(hex[b&15]);}
+  SecureZeroMemory(rnd,sizeof(rnd));tmp=dst;tmp+=suffix;
+  HANDLE h=CreateFileW(tmp.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+  if(h!=INVALID_HANDLE_VALUE){CloseHandle(h);return true;}
+  if(GetLastError()!=ERROR_FILE_EXISTS&&GetLastError()!=ERROR_ALREADY_EXISTS)return false;
+ }
+ return false;
+}
+
+static void makeAad(const Header& h,uint64_t index,uint32_t size,std::vector<BYTE>& aad){
+ aad.resize(sizeof(Header)+sizeof(index)+sizeof(size));
+ memcpy(aad.data(),&h,sizeof(Header));memcpy(aad.data()+sizeof(Header),&index,sizeof(index));memcpy(aad.data()+sizeof(Header)+sizeof(index),&size,sizeof(size));
+}
+static bool encryptFile(const fs::path& p,const std::wstring& pass,std::wstring& out,std::wstring& err,bool inPlace=false){
+ std::error_code ec;uint64_t total=fs::file_size(p,ec);if(ec){err=L"Не удалось определить размер файла.";return false;}
+ std::ifstream in(p,std::ios::binary);if(!in){err=L"Не удалось открыть исходный файл.";return false;}
+ Header h{};memcpy(h.magic,MAGIC,8);h.version=2;h.rounds=KDF_ROUNDS;h.size=total;
+ if(!randomBytes(h.salt,16)){err=L"Системный генератор случайных чисел недоступен.";return false;}
+ BYTE key[32]{};if(!derive(pass,h,key)){err=L"Не удалось получить ключ.";return false;}
+ fs::path wanted=p;if(!inPlace)wanted+=L".zhc";fs::path dst,tmp;
+ if(inPlace)dst=p;else if(!uniqueOutput(wanted,dst)){SecureZeroMemory(key,32);err=L"Не удалось подобрать имя результата.";return false;}
+ tmp.clear();if(!createTempPath(dst,tmp)){SecureZeroMemory(key,32);err=L"Не удалось создать уникальный временный файл.";return false;}
+ std::ofstream file(tmp,std::ios::binary|std::ios::trunc);
+ if(!file){DeleteFileW(tmp.c_str());SecureZeroMemory(key,32);err=L"Не удалось создать временный файл.";return false;}
+ file.write((const char*)&h,sizeof(h));
+ std::vector<BYTE> plain(CHUNK_BYTES),cipher(CHUNK_BYTES),aad;
+ uint64_t remaining=total,index=0;bool ok=(bool)file;
+ do{
+  uint32_t n=(uint32_t)std::min<uint64_t>(CHUNK_BYTES,remaining);
+  if(n&&!in.read((char*)plain.data(),n)){ok=false;err=L"Ошибка чтения исходного файла.";break;}
+  ChunkHeader ch{};ch.size=n;
+  if(!randomBytes(ch.nonce,12)){ok=false;err=L"Не удалось создать случайный nonce.";break;}
+  makeAad(h,index,n,aad);
+  if(!gcmChunk(true,ch.nonce,key,aad.data(),(ULONG)aad.size(),plain.data(),n,cipher.data(),ch.tag)){ok=false;err=L"Ошибка AES-256-GCM.";break;}
+  file.write((const char*)&ch,sizeof(ch));if(n)file.write((const char*)cipher.data(),n);
+  if(!file){ok=false;err=L"Ошибка записи зашифрованного файла.";break;}
+  SecureZeroMemory(plain.data(),n);SecureZeroMemory(cipher.data(),n);
+  remaining-=n;++index;
+ }while(remaining>0);
+ if(ok&&in.peek()!=std::char_traits<char>::eof()){ok=false;err=L"Исходный файл изменился во время шифрования."; }
+ SecureZeroMemory(key,32);wipe(plain);wipe(cipher);wipe(aad);
+ file.flush();if(!file)ok=false;file.close();
+ if(!ok){DeleteFileW(tmp.c_str());if(err.empty())err=L"Не удалось записать зашифрованный файл.";return false;}
+ return inPlace?finalizeTempInPlace(tmp,dst,out,err):finalizeTemp(tmp,dst,out,err);
+}
+static bool decryptFile(const fs::path& p,const std::wstring& pass,std::wstring& out,std::wstring& err,bool inPlace=false){
+ std::ifstream in(p,std::ios::binary);if(!in){err=L"Не удалось открыть зашифрованный файл.";return false;}
+ Header h{};if(!in.read((char*)&h,sizeof(h))||memcmp(h.magic,MAGIC,8)||h.version!=2||h.rounds<100000||h.rounds>2000000){err=L"Это не файл формата ZH Cryptor 2 или заголовок повреждён.";return false;}
+ BYTE key[32]{};if(!derive(pass,h,key)){err=L"Не удалось получить ключ.";return false;}
+ fs::path wanted=p;if(!inPlace){if(wanted.extension()==L".zhc")wanted.replace_extension();else wanted+=L".restored";}
+ fs::path dst,tmp;if(inPlace)dst=p;else if(!uniqueOutput(wanted,dst)){SecureZeroMemory(key,32);err=L"Не удалось подобрать имя результата.";return false;}
+ tmp.clear();if(!createTempPath(dst,tmp)){SecureZeroMemory(key,32);err=L"Не удалось создать уникальный временный файл.";return false;}std::ofstream file(tmp,std::ios::binary|std::ios::trunc);
+ if(!file){DeleteFileW(tmp.c_str());SecureZeroMemory(key,32);err=L"Не удалось создать временный файл.";return false;}
+ std::vector<BYTE> cipher(CHUNK_BYTES),plain(CHUNK_BYTES),aad;
+ uint64_t total=0,index=0;bool ok=true,hadChunk=false;
+ while(ok){
+  ChunkHeader ch{};in.read((char*)&ch,sizeof(ch));
+  if(in.gcount()==0&&in.eof())break;
+  if(in.gcount()!=sizeof(ch)||ch.size>CHUNK_BYTES||total>h.size||ch.size>h.size-total||(ch.size==0&&(h.size!=0||hadChunk))){ok=false;err=L"Повреждён заголовок блока.";break;}
+  if(ch.size&&!in.read((char*)cipher.data(),ch.size)){ok=false;err=L"Файл обрезан.";break;}
+  makeAad(h,index,ch.size,aad);
+  if(!gcmChunk(false,ch.nonce,key,aad.data(),(ULONG)aad.size(),cipher.data(),ch.size,plain.data(),ch.tag)){ok=false;err=L"Неверный пароль или повреждённый блок. Исходник сохранён.";break;}
+  if(ch.size)file.write((const char*)plain.data(),ch.size);
+  if(!file){ok=false;err=L"Ошибка записи расшифрованного файла.";break;}
+  SecureZeroMemory(cipher.data(),ch.size);SecureZeroMemory(plain.data(),ch.size);
+  total+=ch.size;++index;hadChunk=true;
+  if(total==h.size)break;
+ }
+ if(ok&&(!hadChunk||total!=h.size||in.peek()!=std::char_traits<char>::eof())){ok=false;err=L"Размер или структура файла не совпадает с заголовком.";}
+ SecureZeroMemory(key,32);wipe(cipher);wipe(plain);wipe(aad);
+ file.flush();if(!file)ok=false;file.close();
+ if(!ok){DeleteFileW(tmp.c_str());if(err.empty())err=L"Не удалось расшифровать файл.";return false;}
+ return inPlace?finalizeTempInPlace(tmp,dst,out,err):finalizeTemp(tmp,dst,out,err);
+}
+
+
+
+static bool selfTestCrypto(){
+ std::error_code ec;fs::path root=fs::temp_directory_path()/(L"zhcryptor-selftest-"+std::to_wstring(GetCurrentProcessId()));
+ fs::remove_all(root,ec);ec.clear();if(!fs::create_directories(root,ec)||ec)return false;
+ bool ok=true;const std::wstring pass=L"x";
+ std::vector<size_t> sizes={0,1,CHUNK_BYTES+37,16u*1024u*1024u+19u};
+ for(size_t n:sizes){
+  fs::path src=root/(L"input-"+std::to_wstring(n)+L".bin");
+  std::vector<BYTE> expected(n);
+  for(size_t i=0;i<n;++i)expected[i]=(BYTE)((i*31u+17u)&255u);
+  {std::ofstream o(src,std::ios::binary|std::ios::trunc);if(n)o.write((const char*)expected.data(),(std::streamsize)n);if(!o){ok=false;break;}}
+  std::wstring enc,plain,err;
+  if(!encryptFile(src,pass,enc,err)){ok=false;break;}
+  if(!decryptFile(fs::path(enc),pass,plain,err)){ok=false;break;}
+  std::ifstream in(fs::path(plain),std::ios::binary);std::vector<BYTE> actual((std::istreambuf_iterator<char>(in)),{});
+  if(actual!=expected){ok=false;break;}
+  std::wstring badOut,badErr;if(decryptFile(fs::path(enc),L"wrong",badOut,badErr)){ok=false;break;}
+  fs::path corrupt=root/(L"corrupt-"+std::to_wstring(n)+L".zhc");fs::copy_file(fs::path(enc),corrupt,fs::copy_options::overwrite_existing,ec);
+  if(ec){ok=false;break;}
+  {std::fstream io(corrupt,std::ios::binary|std::ios::in|std::ios::out);io.seekg(-1,std::ios::end);char c=0;io.read(&c,1);c^=0x5a;io.seekp(-1,std::ios::end);io.write(&c,1);if(!io){ok=false;break;}}
+  if(decryptFile(corrupt,pass,badOut,badErr)){ok=false;break;}
+ }
+ if(ok){
+  fs::path inplace=root/L"in-place.dat";std::vector<BYTE> expected(8193);
+  for(size_t i=0;i<expected.size();++i)expected[i]=(BYTE)((i*13u+9u)&255u);
+  {std::ofstream o(inplace,std::ios::binary);o.write((const char*)expected.data(),(std::streamsize)expected.size());if(!o)ok=false;}
+  std::wstring out,err;
+  if(ok&&!encryptFile(inplace,pass,out,err,true))ok=false;
+  if(ok&&(!fs::exists(inplace)||fs::exists(inplace.wstring()+L".zhc")||!isZhcFile(inplace)))ok=false;
+  if(ok&&!decryptFile(inplace,pass,out,err,true))ok=false;
+  if(ok){std::ifstream in(inplace,std::ios::binary);std::vector<BYTE> actual((std::istreambuf_iterator<char>(in)),{});if(actual!=expected)ok=false;}
+ }
+ fs::remove_all(root,ec);return ok&&!ec;
+}
+
+static bool registerZhcAssociation(){
+ wchar_t exe[MAX_PATH]{};if(!GetModuleFileNameW(nullptr,exe,MAX_PATH))return false;
+ HKEY h=nullptr;
+ if(RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\Classes\\SystemFileAssociations\\.zhc\\DefaultIcon",0,nullptr,0,KEY_WRITE,nullptr,&h,nullptr)!=ERROR_SUCCESS)return false;
+ std::wstring icon=std::wstring(1,L'"')+std::wstring(exe)+std::wstring(1,L'"')+L",0";
+ LONG rs=RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)icon.c_str(),(DWORD)((icon.size()+1)*sizeof(wchar_t)));
+ RegCloseKey(h);if(rs!=ERROR_SUCCESS)return false;
+ if(RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\Classes\\.zhc\\OpenWithProgids",0,nullptr,0,KEY_WRITE,nullptr,&h,nullptr)!=ERROR_SUCCESS)return false;
+ rs=RegSetValueExW(h,L"ZH.Cryptor.File",0,REG_NONE,nullptr,0);RegCloseKey(h);if(rs!=ERROR_SUCCESS)return false;
+ if(RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\Classes\\ZH.Cryptor.File\\shell\\open\\command",0,nullptr,0,KEY_WRITE,nullptr,&h,nullptr)!=ERROR_SUCCESS)return false;
+ std::wstring cmd=std::wstring(1,L'"')+std::wstring(exe)+std::wstring(1,L'"')+L" --decrypt "+std::wstring(1,L'"')+L"%1"+std::wstring(1,L'"');
+ rs=RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)cmd.c_str(),(DWORD)((cmd.size()+1)*sizeof(wchar_t)));
+ RegCloseKey(h);if(rs!=ERROR_SUCCESS)return false;
+ SHChangeNotify(SHCNE_ASSOCCHANGED,SHCNF_IDLIST,nullptr,nullptr);return true;
+}
+
+static bool shellMenu(bool enable,std::wstring& err){
+ const wchar_t* keys[]={L"Software\\Classes\\*\\shell\\ZHCryptor.Encrypt",L"Software\\Classes\\*\\shell\\ZHCryptor.Decrypt",L"Software\\Classes\\Directory\\shell\\ZHCryptor.Encrypt",L"Software\\Classes\\Directory\\shell\\ZHCryptor.Decrypt"};
+ if(!enable){for(auto k:keys){LONG s=RegDeleteTreeW(HKEY_CURRENT_USER,k);if(s!=ERROR_SUCCESS&&s!=ERROR_FILE_NOT_FOUND){err=L"Не удалось удалить пункт Проводника.";return false;}}
+  RegDeleteTreeW(HKEY_CURRENT_USER,L"Software\\Classes\\ZH.Cryptor.File");
+  RegDeleteTreeW(HKEY_CURRENT_USER,L"Software\\Classes\\SystemFileAssociations\\.zhc\\DefaultIcon");
+  HKEY ext=nullptr;if(RegOpenKeyExW(HKEY_CURRENT_USER,L"Software\\Classes\\.zhc\\OpenWithProgids",0,KEY_WRITE,&ext)==ERROR_SUCCESS){RegDeleteValueW(ext,L"ZH.Cryptor.File");RegCloseKey(ext);}SHChangeNotify(SHCNE_ASSOCCHANGED,SHCNF_IDLIST,nullptr,nullptr);return true;}
+ wchar_t exe[MAX_PATH]{};if(!GetModuleFileNameW(nullptr,exe,MAX_PATH)){err=L"Не удалось определить путь программы.";return false;}
+ if(!registerZhcAssociation()){err=L"Не удалось зарегистрировать значок файлов .zhc.";return false;}
+ for(int i=0;i<4;i++){HKEY h=nullptr;LONG s=RegCreateKeyExW(HKEY_CURRENT_USER,keys[i],0,nullptr,0,KEY_WRITE,nullptr,&h,nullptr);if(s!=ERROR_SUCCESS){err=L"Не удалось добавить меню Проводника.";return false;}
+  const wchar_t* label=(i%2==0)?L"Зашифровать — ZH Cryptor":L"Расшифровать — ZH Cryptor";LONG wr=RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)label,(DWORD)((wcslen(label)+1)*sizeof(wchar_t)));RegCloseKey(h);if(wr!=ERROR_SUCCESS){err=L"Не удалось записать название пункта Проводника.";for(auto k:keys)RegDeleteTreeW(HKEY_CURRENT_USER,k);return false;}
+  std::wstring cmdkey=std::wstring(keys[i])+L"\\command";if(RegCreateKeyExW(HKEY_CURRENT_USER,cmdkey.c_str(),0,nullptr,0,KEY_WRITE,nullptr,&h,nullptr)!=ERROR_SUCCESS){err=L"Не удалось настроить команду меню.";return false;}
+  std::wstring cmd=L"\""+std::wstring(exe)+L"\" "+((i%2==0)?L"--encrypt ":L"--decrypt ")+L"\"%1\"";wr=RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)cmd.c_str(),(DWORD)((cmd.size()+1)*sizeof(wchar_t)));RegCloseKey(h);if(wr!=ERROR_SUCCESS){err=L"Не удалось записать команду пункта Проводника.";for(auto k:keys)RegDeleteTreeW(HKEY_CURRENT_USER,k);return false;}
+ }return true;
+}
+
+static bool isReparsePoint(const fs::path& path){
+ DWORD a=GetFileAttributesW(path.c_str());return a!=INVALID_FILE_ATTRIBUTES&&(a&FILE_ATTRIBUTE_REPARSE_POINT)!=0;
+}
+static bool hasEncrypted(const fs::path& folder){
+ try{
+  for(auto it=fs::recursive_directory_iterator(folder,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it){
+   if(isReparsePoint(it->path())){std::error_code ec;if(it->is_directory(ec))it.disable_recursion_pending();continue;}
+   std::error_code ec;if(it->is_regular_file(ec)&&it->path().extension()==L".zhc")return true;
+  }
+ }catch(...){}return false;
+}
+static bool setFolderLockIcon(const fs::path& folder){
+ HMODULE mod=GetModuleHandleW(nullptr);HRSRC res=FindResourceW(mod,MAKEINTRESOURCEW(102),RT_RCDATA);if(!res)return false;
+ HGLOBAL loaded=LoadResource(mod,res);DWORD bytes=SizeofResource(mod,res);const void* raw=LockResource(loaded);if(!raw||!bytes)return false;
+ fs::path ini=folder/L"desktop.ini",ico=folder/L".zhcryptor.ico";
+ DWORD original=GetFileAttributesW(folder.c_str());if(original==INVALID_FILE_ATTRIBUTES)return false;
+ if(fs::exists(ini)){std::ifstream old(ini,std::ios::binary);std::string txt((std::istreambuf_iterator<char>(old)),{});if(txt.find("ZHCRYPTOR_FOLDER_LOCK")==std::string::npos)return false;auto at=txt.find("ORIGINAL_FOLDER_ATTRS=");if(at!=std::string::npos){at+=22;try{original=(DWORD)std::stoul(txt.substr(at));}catch(...){}}}
+ else if(fs::exists(ico))return false;
+ fs::path tmp=ico;tmp+=L".tmp";
+ {std::ofstream out(tmp,std::ios::binary|std::ios::trunc);if(!out)return false;out.write((const char*)raw,bytes);out.flush();if(!out){out.close();fs::remove(tmp);return false;}}
+ if(!MoveFileExW(tmp.c_str(),ico.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){fs::remove(tmp);return false;}
+ std::ofstream meta(ini,std::ios::binary|std::ios::trunc);
+ if(!meta){fs::remove(ico);return false;}
+ meta<<"; ZHCRYPTOR_FOLDER_LOCK\n; ORIGINAL_FOLDER_ATTRS="<<original<<"\n[.ShellClassInfo]\nIconFile=.zhcryptor.ico\nIconIndex=0\n";meta.close();
+ if(!meta){fs::remove(ini);fs::remove(ico);return false;}
+ if(!SetFileAttributesW(ico.c_str(),FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM)||!SetFileAttributesW(ini.c_str(),FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM)||!SetFileAttributesW(folder.c_str(),original|FILE_ATTRIBUTE_SYSTEM)){SetFileAttributesW(ini.c_str(),FILE_ATTRIBUTE_NORMAL);SetFileAttributesW(ico.c_str(),FILE_ATTRIBUTE_NORMAL);DeleteFileW(ini.c_str());DeleteFileW(ico.c_str());SetFileAttributesW(folder.c_str(),original);return false;}
+ SHChangeNotify(SHCNE_ATTRIBUTES|SHCNE_UPDATEITEM,SHCNF_PATH,folder.c_str(),nullptr);return true;
+}
+static void removeFolderLockIcon(const fs::path& folder){
+ fs::path ini=folder/L"desktop.ini",ico=folder/L".zhcryptor.ico";
+ std::ifstream in(ini,std::ios::binary);if(!in)return;std::string txt((std::istreambuf_iterator<char>(in)),{});
+ const std::string marker="ZHCRYPTOR_FOLDER_LOCK";if(txt.find(marker)==std::string::npos)return;
+ DWORD original=GetFileAttributesW(folder.c_str());auto pos=txt.find("ORIGINAL_FOLDER_ATTRS=");
+ if(pos!=std::string::npos){pos+=22;try{DWORD saved=(DWORD)std::stoul(txt.substr(pos));if(original!=INVALID_FILE_ATTRIBUTES)SetFileAttributesW(folder.c_str(),saved);}catch(...){}}
+ SetFileAttributesW(ini.c_str(),FILE_ATTRIBUTE_NORMAL);SetFileAttributesW(ico.c_str(),FILE_ATTRIBUTE_NORMAL);
+ DeleteFileW(ini.c_str());DeleteFileW(ico.c_str());SHChangeNotify(SHCNE_ATTRIBUTES|SHCNE_UPDATEITEM,SHCNF_PATH,folder.c_str(),nullptr);
+}
+
+
+static bool selfTest(){
+ if(!selfTestCrypto())return false;
+ std::error_code ec;
+ fs::path root=fs::temp_directory_path()/(L"zhcryptor-icon-selftest-"+std::to_wstring(GetCurrentProcessId()));
+ fs::remove_all(root,ec);ec.clear();
+ fs::path folder=root/L"folder";
+ if(!fs::create_directories(folder,ec)||ec)return false;
+ DWORD before=GetFileAttributesW(folder.c_str());
+ bool ok=setFolderLockIcon(folder);
+ if(!ok||!fs::exists(folder/L"desktop.ini")||!fs::exists(folder/L".zhcryptor.ico")){fs::remove_all(root,ec);return false;}
+ {std::ifstream in(folder/L"desktop.ini",std::ios::binary);std::string data((std::istreambuf_iterator<char>(in)),{});if(data.find("ZHCRYPTOR_FOLDER_LOCK")==std::string::npos)ok=false;}
+ removeFolderLockIcon(folder);
+ if(fs::exists(folder/L"desktop.ini")||fs::exists(folder/L".zhcryptor.ico"))ok=false;
+ DWORD after=GetFileAttributesW(folder.c_str());
+ if(before!=INVALID_FILE_ATTRIBUTES&&after!=before)ok=false;
+ fs::path custom=root/L"custom";fs::create_directories(custom,ec);
+ {std::ofstream out(custom/L"desktop.ini",std::ios::binary);out<<"user-owned desktop settings";}
+ if(setFolderLockIcon(custom))ok=false;
+ {std::ifstream in(custom/L"desktop.ini",std::ios::binary);std::string data((std::istreambuf_iterator<char>(in)),{});if(data!="user-owned desktop settings")ok=false;}
+ fs::remove_all(root,ec);return ok&&!ec;
+}
+
+enum{P_PATH=101,P_PASS,P_CONFIRM,P_SHOW,P_ENCRYPT,P_DECRYPT,P_BROWSE,P_FOLDER,P_MENU,P_UNMENU,P_LANG,P_THEME,P_STATUS,P_TITLE=201,P_PATH_LABEL,P_PASS_LABEL,P_CONFIRM_LABEL,P_THEME_LABEL};
+static HWND gWnd,gPath,gPass,gConfirm,gStatus,gConfirmLabel;static bool gShow=false,gDark=false,gEnglish=false;static std::wstring gArgPath;static bool gArgDecrypt=false;
+static const wchar_t* tr(const wchar_t* ru,const wchar_t* en){return gEnglish?en:ru;}
+static HWND ctl(HWND p,const wchar_t* cls,const wchar_t* text,DWORD style,int x,int y,int w,int h,int id=0){return CreateWindowExW(0,cls,text,WS_CHILD|WS_VISIBLE|style,x,y,w,h,p,(HMENU)(INT_PTR)id,GetModuleHandleW(nullptr),nullptr);}
+static std::wstring get(HWND h){int n=GetWindowTextLengthW(h);std::wstring s(n+1,L'\0');GetWindowTextW(h,s.data(),n+1);s.resize(n);return s;}
+static void status(const std::wstring& s){SetWindowTextW(gStatus,s.c_str());}
+static void mode(bool dec){ShowWindow(gConfirmLabel,dec||gShow?SW_HIDE:SW_SHOW);ShowWindow(gConfirm,dec||gShow?SW_HIDE:SW_SHOW);}
+static void chooseFile(){wchar_t p[32768]{};OPENFILENAMEW o{};o.lStructSize=sizeof(o);o.hwndOwner=gWnd;o.lpstrFile=p;o.nMaxFile=32768;o.lpstrFilter=L"Все файлы\0*.*\0\0";o.Flags=OFN_FILEMUSTEXIST|OFN_PATHMUSTEXIST;if(GetOpenFileNameW(&o))SetWindowTextW(gPath,p);}
+static void chooseFolder(){BROWSEINFOW b{};b.hwndOwner=gWnd;b.lpszTitle=tr(L"Выберите папку",L"Select a folder");LPITEMIDLIST id=SHBrowseForFolderW(&b);if(id){wchar_t p[MAX_PATH]{};if(SHGetPathFromIDListW(id,p))SetWindowTextW(gPath,p);CoTaskMemFree(id);}}
+static void run(bool dec){
+ std::wstring path=get(gPath),pass=get(gPass),confirm=get(gConfirm);
+ if(path.empty()||pass.empty()){MessageBoxW(gWnd,tr(L"Укажи файл или папку и введи пароль хотя бы из одного символа.",L"Choose a file or folder and enter at least one password character."),L"ZH Cryptor",MB_ICONWARNING);return;}
+ if(!dec&&!gShow&&pass!=confirm){MessageBoxW(gWnd,tr(L"Пароли не совпадают.",L"Passwords do not match."),L"ZH Cryptor",MB_ICONWARNING);return;}
+ int good=0,bad=0;std::wstring last;
+ try{fs::path p(path);std::vector<fs::path> files;
+  if(fs::is_regular_file(p)){
+   if(isReparsePoint(p)){last=L"Символические ссылки и reparse points не обрабатываются.";bad++;}
+   else if(dec?!isZhcFile(p):isZhcFile(p)){last=dec?L"Файл не распознан как ZH Cryptor.":L"Файл уже зашифрован ZH Cryptor.";bad++;}
+   else files.push_back(p);
+  }
+  else if(fs::is_directory(p)){for(auto it=fs::recursive_directory_iterator(p,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it){if(isReparsePoint(it->path())){std::error_code e;if(it->is_directory(e))it.disable_recursion_pending();continue;}std::error_code e;if(it->is_regular_file(e)&&it->path().filename()!=L"desktop.ini"&&it->path().filename()!=L".zhcryptor.ico"&&it->path().extension()!=L".zhctmp"&&(dec?isZhcFile(it->path()):!isZhcFile(it->path())))files.push_back(it->path());}}
+  else{last=L"Путь не найден.";bad++;}
+  for(const auto& f:files){std::wstring out,err;bool ok=dec?decryptFile(f,pass,out,err,true):encryptFile(f,pass,out,err,true);if(ok){good++;last=out;}else{bad++;last=err;}}
+  
+  if(good>0){
+   std::vector<fs::path> dirs;
+   if(fs::is_directory(p)){dirs.push_back(p);for(auto it=fs::recursive_directory_iterator(p,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it){if(isReparsePoint(it->path())){std::error_code e;if(it->is_directory(e))it.disable_recursion_pending();continue;}std::error_code e;if(it->is_directory(e))dirs.push_back(it->path());}}
+   else dirs.push_back(p.parent_path());
+   for(const auto& d:dirs){if(dec){if(!hasEncrypted(d))removeFolderLockIcon(d);}else if(hasEncrypted(d))setFolderLockIcon(d);}
+  }
+ }catch(...){bad++;last=L"Ошибка доступа к папке или файлам.";}
+ SecureZeroMemory(pass.data(),pass.size()*sizeof(wchar_t));SecureZeroMemory(confirm.data(),confirm.size()*sizeof(wchar_t));
+ SetWindowTextW(gPass,L"");SetWindowTextW(gConfirm,L"");
+ status(tr(L"Успешно: ",L"Done: ")+std::to_wstring(good)+tr(L"; ошибок: ",L"; errors: ")+std::to_wstring(bad)+(last.empty()?L"":L" — "+last));
+}
+static void applyLanguage(){
+ SetWindowTextW(gWnd,L"ZH Cryptor");
+ SetWindowTextW(GetDlgItem(gWnd,P_TITLE),L"ZH Cryptor");
+ SetWindowTextW(GetDlgItem(gWnd,P_PATH_LABEL),tr(L"Файл или папка",L"File or folder"));
+ SetWindowTextW(GetDlgItem(gWnd,P_PASS_LABEL),tr(L"Пароль",L"Password"));
+ SetWindowTextW(GetDlgItem(gWnd,P_CONFIRM_LABEL),tr(L"Повторите пароль",L"Confirm password"));
+ SetWindowTextW(GetDlgItem(gWnd,P_THEME_LABEL),tr(L"Светлая / тёмная",L"Light / dark"));
+ SetWindowTextW(GetDlgItem(gWnd,P_BROWSE),tr(L"Файл...",L"File..."));
+ SetWindowTextW(GetDlgItem(gWnd,P_FOLDER),tr(L"Папка...",L"Folder..."));
+ SetWindowTextW(GetDlgItem(gWnd,P_SHOW),tr(L"Показать",L"Show"));
+ SetWindowTextW(GetDlgItem(gWnd,P_ENCRYPT),tr(L"Зашифровать на месте",L"Encrypt in place"));
+ SetWindowTextW(GetDlgItem(gWnd,P_DECRYPT),tr(L"Расшифровать на месте",L"Decrypt in place"));
+ SetWindowTextW(GetDlgItem(gWnd,P_MENU),tr(L"Добавить меню Проводника",L"Add Explorer menu"));
+ SetWindowTextW(GetDlgItem(gWnd,P_UNMENU),tr(L"Убрать меню",L"Remove menu"));
+ SetWindowTextW(gStatus,tr(L"Файлы шифруются на месте. При ошибке исходник сохраняется.",L"Files are encrypted in place. On failure, the original is preserved."));
+}
+static void controls(HWND h){
+ ctl(h,L"STATIC",L"ZH Cryptor",SS_LEFT,18,12,250,30,P_TITLE);
+ ctl(h,L"STATIC",tr(L"Файл или папка",L"File or folder"),0,18,52,200,20,P_PATH_LABEL);
+ gPath=ctl(h,L"EDIT",L"",WS_BORDER|ES_AUTOHSCROLL,18,74,390,25,P_PATH);
+ ctl(h,L"BUTTON",tr(L"Файл...",L"File..."),BS_PUSHBUTTON,416,74,88,25,P_BROWSE);
+ ctl(h,L"BUTTON",tr(L"Папка...",L"Folder..."),BS_PUSHBUTTON,416,105,88,25,P_FOLDER);
+ ctl(h,L"STATIC",tr(L"Пароль",L"Password"),0,18,112,150,20,P_PASS_LABEL);
+ gPass=ctl(h,L"EDIT",L"",WS_BORDER|ES_PASSWORD|ES_AUTOHSCROLL,18,135,240,25,P_PASS);
+ ctl(h,L"BUTTON",tr(L"Показать",L"Show"),BS_AUTOCHECKBOX,270,135,100,25,P_SHOW);
+ gConfirmLabel=ctl(h,L"STATIC",tr(L"Повторите пароль",L"Confirm password"),0,18,170,170,20,P_CONFIRM_LABEL);
+ gConfirm=ctl(h,L"EDIT",L"",WS_BORDER|ES_PASSWORD|ES_AUTOHSCROLL,18,193,240,25,P_CONFIRM);
+ ctl(h,L"BUTTON",tr(L"Зашифровать на месте",L"Encrypt in place"),BS_PUSHBUTTON,18,235,170,32,P_ENCRYPT);
+ ctl(h,L"BUTTON",tr(L"Расшифровать на месте",L"Decrypt in place"),BS_PUSHBUTTON,196,235,170,32,P_DECRYPT);
+ ctl(h,L"BUTTON",tr(L"Добавить меню Проводника",L"Add Explorer menu"),BS_PUSHBUTTON,18,280,205,27,P_MENU);
+ ctl(h,L"BUTTON",tr(L"Убрать меню",L"Remove menu"),BS_PUSHBUTTON,232,280,130,27,P_UNMENU);
+ gStatus=ctl(h,L"STATIC",tr(L"Оригиналы сохраняются. Результат создаётся рядом.",L"Originals are preserved. Output is created beside the source."),SS_LEFT,18,320,480,45,P_STATUS);
+ HWND lang=ctl(h,L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,365,12,140,120,P_LANG);SendMessageW(lang,CB_ADDSTRING,0,(LPARAM)L"Русский");SendMessageW(lang,CB_ADDSTRING,0,(LPARAM)L"English");SendMessageW(lang,CB_SETCURSEL,0,0);
+ ctl(h,L"STATIC",tr(L"Светлая / тёмная",L"Light / dark"),SS_LEFT,18,370,110,22,P_THEME_LABEL);
+ HWND theme=ctl(h,TRACKBAR_CLASSW,L"",TBS_NOTICKS|TBS_TOOLTIPS,132,367,90,28,P_THEME);SendMessageW(theme,TBM_SETRANGE,TRUE,MAKELONG(0,1));SendMessageW(theme,TBM_SETPOS,TRUE,0);
+}
+static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
+ if(m==WM_CREATE){gWnd=h;controls(h);applyLanguage();if(!gArgPath.empty()){SetWindowTextW(gPath,gArgPath.c_str());ShowWindow(GetDlgItem(h,gArgDecrypt?P_ENCRYPT:P_DECRYPT),SW_HIDE);mode(gArgDecrypt);SetFocus(gPass);}return 0;}
+ if(m==WM_COMMAND){switch(LOWORD(w)){
+ case P_BROWSE:chooseFile();break;case P_FOLDER:chooseFolder();break;
+ case P_SHOW:gShow=SendMessageW((HWND)l,BM_GETCHECK,0,0)==BST_CHECKED;SendMessageW(gPass,EM_SETPASSWORDCHAR,gShow?0:L'*',0);SendMessageW(gConfirm,EM_SETPASSWORDCHAR,gShow?0:L'*',0);InvalidateRect(gPass,nullptr,TRUE);InvalidateRect(gConfirm,nullptr,TRUE);mode(false);break;
+ case P_ENCRYPT:mode(false);run(false);break;case P_DECRYPT:mode(true);run(true);break;
+ case P_MENU:{std::wstring e;if(shellMenu(true,e))status(tr(L"Пункты Проводника добавлены для текущего пользователя.",L"Explorer items added for current user."));else status(e);break;}
+ case P_UNMENU:{std::wstring e;if(shellMenu(false,e))status(tr(L"Пункты Проводника удалены.",L"Explorer items removed."));else status(e);break;}
+ case P_LANG:gEnglish=SendMessageW((HWND)l,CB_GETCURSEL,0,0)==1;applyLanguage();break;
+
+ }return 0;}
+ if(m==WM_HSCROLL&&(HWND)l==GetDlgItem(h,P_THEME)){gDark=SendMessageW((HWND)l,TBM_GETPOS,0,0)==1;InvalidateRect(h,nullptr,TRUE);return 0;}
+ if(m==WM_CTLCOLORSTATIC||m==WM_CTLCOLOREDIT||m==WM_CTLCOLORBTN||m==WM_CTLCOLORLISTBOX){if(gDark){HDC dc=(HDC)w;SetBkColor(dc,RGB(40,40,40));SetTextColor(dc,RGB(240,240,240));static HBRUSH b=CreateSolidBrush(RGB(40,40,40));return (LRESULT)b;}}
+ if(m==WM_ERASEBKGND&&gDark){RECT r;GetClientRect(h,&r);static HBRUSH b=CreateSolidBrush(RGB(40,40,40));FillRect((HDC)w,&r,b);return 1;}
+ if(m==WM_DESTROY){PostQuitMessage(0);return 0;}return DefWindowProcW(h,m,w,l);
+}
+int WINAPI wWinMain(HINSTANCE inst,HINSTANCE,PWSTR,int show){
+ int argc=0;LPWSTR* argv=CommandLineToArgvW(GetCommandLineW(),&argc);if(argv&&argc>=2&&wcscmp(argv[1],L"--self-test")==0){LocalFree(argv);return selfTest()?0:2;}if(argv&&argc>=3&&(wcscmp(argv[1],L"--encrypt")==0||wcscmp(argv[1],L"--decrypt")==0)){gArgDecrypt=wcscmp(argv[1],L"--decrypt")==0;gArgPath=argv[2];}if(argv)LocalFree(argv);
+ INITCOMMONCONTROLSEX ic{sizeof(ic),ICC_STANDARD_CLASSES|ICC_BAR_CLASSES};InitCommonControlsEx(&ic);
+ WNDCLASSW wc{};wc.lpfnWndProc=proc;wc.hInstance=inst;wc.hCursor=LoadCursor(nullptr,IDC_ARROW);wc.hIcon=LoadIconW(inst,MAKEINTRESOURCEW(101));wc.hbrBackground=(HBRUSH)(COLOR_BTNFACE+1);wc.lpszClassName=L"ZHCryptorWindow";RegisterClassW(&wc);
+ HWND h=CreateWindowExW(WS_EX_APPWINDOW,wc.lpszClassName,L"ZH Cryptor",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,CW_USEDEFAULT,CW_USEDEFAULT,535,445,nullptr,nullptr,inst,nullptr);if(!h)return 1;
+ ShowWindow(h,show);UpdateWindow(h);MSG msg;while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}return (int)msg.wParam;
+}
