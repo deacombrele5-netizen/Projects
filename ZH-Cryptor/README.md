@@ -1,6 +1,6 @@
 # ZH Cryptor
 
-ZH Cryptor is a small, offline, portable Win32 utility for encrypting copies of files and the files inside folders.
+ZH Cryptor is a small, offline, portable Win32 utility for encrypting files in place and recursively processing files inside folders.
 
 ## Features
 - Classic Windows controls; Russian and English selector; light/dark theme toggle.
@@ -9,8 +9,9 @@ ZH Cryptor is a small, offline, portable Win32 utility for encrypting copies of 
 - Password confirmation when hidden; a single entry when password visibility is enabled.
 - Optional per-user Explorer context-menu entries for files and folders (HKCU; no administrator rights).
 - Encrypted `.zhc` files receive the embedded gold-lock file icon through a per-user Windows file association. Folder encryption adds a gold-lock folder icon using a hidden `desktop.ini` and `.zhcryptor.ico`; existing custom `desktop.ini` files are left untouched.
-- Encrypts to a sibling `.zhc` file. Decrypts to a separate restored file.
-- Never deletes or overwrites the source.
+- Encrypts and decrypts each selected file in place: the filename remains unchanged and no second completed copy is left beside it.
+- For crash-safe replacement, the program writes a uniquely named temporary staging file in the same folder, flushes it, then uses Windows `ReplaceFileW` to atomically replace the original. The staging file is removed on failure; the original remains untouched unless replacement succeeds.
+- In-place operations are destructive after success. Keep a separate backup before processing important data. A failed write, permission error, or failed replacement must not replace the source.
 - No network access, cloud service, telemetry, settings files or application logs. Folder-icon decoration does add two hidden metadata files to the selected folder.
 - x64 and Win32 builds; statically linked MSVC runtime.
 
@@ -19,7 +20,7 @@ The supported target for this build is Windows 10 and Windows 11. Windows 7, Vis
 
 ## Limits and security notes
 - File contents are processed in 4 MiB authenticated blocks, rather than loading the entire file into memory. There is no artificial 256 MiB application limit; practical limits are the filesystem, available disk space, and Windows APIs.
-- Folder mode recursively encrypts eligible files one by one; it does not create one encrypted folder container. The original files remain in place.
+- Folder mode recursively encrypts eligible files one by one; it does not create one encrypted folder container. File names and folder structure remain in place. The app identifies its encrypted files by the authenticated ZHC file header rather than by a `.zhc` extension.
 - Only ZH Cryptor's own `.zhc` format is supported for decryption. A program cannot generically remove passwords from arbitrary formats made by unrelated encryption software.
 - Passwords of one or more characters are accepted. Very short passwords are much easier to guess; use a long, unique passphrase for important data.
 - Losing the password means the data cannot be recovered.
