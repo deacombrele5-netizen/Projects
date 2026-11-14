@@ -1,0 +1,32 @@
+name: Build USB Encryptor
+on:
+  push:
+    branches: [usb-encryptor-rebuild]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, Win32]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S USBEncryptor -B build -A ${{ matrix.arch }} -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Prepare portable outputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item build/Release/USBEncryptor.exe dist/USBEncryptor-${{ matrix.arch }}.exe
+          Compress-Archive -Path dist/USBEncryptor-${{ matrix.arch }}.exe, USBEncryptor/README.md -DestinationPath dist/USBEncryptor-${{ matrix.arch }}-portable.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: USBEncryptor-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
