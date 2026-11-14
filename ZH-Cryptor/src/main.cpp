@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <cwchar>
+#include <sstream>
 
 #pragma comment(lib,"bcrypt.lib")
 #pragma comment(lib,"comctl32.lib")
@@ -98,6 +99,39 @@ static bool shellMenu(bool enable,std::wstring& err){
   std::wstring cmd=L"\""+std::wstring(exe)+L"\" "+((i%2==0)?L"--encrypt ":L"--decrypt ")+L"\"%1\"";RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)cmd.c_str(),(DWORD)((cmd.size()+1)*sizeof(wchar_t)));RegCloseKey(h);
  }return true;
 }
+
+static bool hasEncrypted(const fs::path& folder){
+ try{for(auto it=fs::recursive_directory_iterator(folder,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it)if(it->is_regular_file()&&it->path().extension()==L".zhc")return true;}catch(...){}return false;
+}
+static bool setFolderLockIcon(const fs::path& folder){
+ HMODULE mod=GetModuleHandleW(nullptr);HRSRC res=FindResourceW(mod,MAKEINTRESOURCEW(102),RT_RCDATA);if(!res)return false;
+ HGLOBAL loaded=LoadResource(mod,res);DWORD bytes=SizeofResource(mod,res);const void* raw=LockResource(loaded);if(!raw||!bytes)return false;
+ fs::path ini=folder/L"desktop.ini",ico=folder/L".zhcryptor.ico";
+ if(fs::exists(ini)){std::ifstream old(ini,std::ios::binary);std::string txt((std::istreambuf_iterator<char>(old)),{});if(txt.find("ZHCRYPTOR_FOLDER_LOCK")==std::string::npos)return false;}
+ else if(fs::exists(ico))return false;
+ DWORD original=GetFileAttributesW(folder.c_str());if(original==INVALID_FILE_ATTRIBUTES)return false;
+ fs::path tmp=ico;tmp+=L".tmp";
+ {std::ofstream out(tmp,std::ios::binary|std::ios::trunc);if(!out)return false;out.write((const char*)raw,bytes);out.flush();if(!out){out.close();fs::remove(tmp);return false;}}
+ if(!MoveFileExW(tmp.c_str(),ico.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){fs::remove(tmp);return false;}
+ std::ofstream meta(ini,std::ios::binary|std::ios::trunc);
+ if(!meta){fs::remove(ico);return false;}
+ meta<<"; ZHCRYPTOR_FOLDER_LOCK\n; ORIGINAL_FOLDER_ATTRS="<<original<<"\n[.ShellClassInfo]\nIconResource=.zhcryptor.ico,0\n";meta.close();
+ if(!meta){fs::remove(ini);fs::remove(ico);return false;}
+ SetFileAttributesW(ico.c_str(),FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM);
+ SetFileAttributesW(ini.c_str(),FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM);
+ SetFileAttributesW(folder.c_str(),original|FILE_ATTRIBUTE_SYSTEM);
+ SHChangeNotify(SHCNE_UPDATEITEM,SHCNF_PATH,folder.c_str(),nullptr);return true;
+}
+static void removeFolderLockIcon(const fs::path& folder){
+ fs::path ini=folder/L"desktop.ini",ico=folder/L".zhcryptor.ico";
+ std::ifstream in(ini,std::ios::binary);if(!in)return;std::string txt((std::istreambuf_iterator<char>(in)),{});
+ const std::string marker="ZHCRYPTOR_FOLDER_LOCK";if(txt.find(marker)==std::string::npos)return;
+ DWORD original=GetFileAttributesW(folder.c_str());auto pos=txt.find("ORIGINAL_FOLDER_ATTRS=");
+ if(pos!=std::string::npos){pos+=22;try{DWORD saved=(DWORD)std::stoul(txt.substr(pos));if(original!=INVALID_FILE_ATTRIBUTES)SetFileAttributesW(folder.c_str(),saved);}catch(...){}}
+ SetFileAttributesW(ini.c_str(),FILE_ATTRIBUTE_NORMAL);SetFileAttributesW(ico.c_str(),FILE_ATTRIBUTE_NORMAL);
+ DeleteFileW(ini.c_str());DeleteFileW(ico.c_str());SHChangeNotify(SHCNE_UPDATEITEM,SHCNF_PATH,folder.c_str(),nullptr);
+}
+
 enum{P_PATH=101,P_PASS,P_CONFIRM,P_SHOW,P_ENCRYPT,P_DECRYPT,P_BROWSE,P_FOLDER,P_MENU,P_UNMENU,P_LANG,P_THEME,P_STATUS};
 static HWND gWnd,gPath,gPass,gConfirm,gStatus,gConfirmLabel;static bool gShow=false,gDark=false,gEnglish=false;static std::wstring gArgPath;static bool gArgDecrypt=false;
 static const wchar_t* tr(const wchar_t* ru,const wchar_t* en){return gEnglish?en:ru;}
@@ -117,6 +151,7 @@ static void run(bool dec){
   else if(fs::is_directory(p)){for(auto it=fs::recursive_directory_iterator(p,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it)if(it->is_regular_file()&&(dec?it->path().extension()==L".zhc":it->path().extension()!=L".zhc"))files.push_back(it->path());}
   else{last=L"Путь не найден.";bad++;}
   for(const auto& f:files){std::wstring out,err;bool ok=dec?decryptFile(f,pass,out,err):encryptFile(f,pass,out,err);if(ok){good++;last=out;}else{bad++;last=err;}}
+  if(good>0){fs::path folder=fs::is_directory(p)?p:p.parent_path();if(dec){if(!hasEncrypted(folder))removeFolderLockIcon(folder);}else setFolderLockIcon(folder);}
  }catch(...){bad++;last=L"Ошибка доступа к папке или файлам.";}
  SecureZeroMemory(pass.data(),pass.size()*sizeof(wchar_t));SecureZeroMemory(confirm.data(),confirm.size()*sizeof(wchar_t));
  status(tr(L"Успешно: ",L"Done: ")+std::to_wstring(good)+tr(L"; ошибок: ",L"; errors: ")+std::to_wstring(bad)+(last.empty()?L"":L" — "+last));
@@ -158,7 +193,7 @@ static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
 int WINAPI wWinMain(HINSTANCE inst,HINSTANCE,PWSTR,int show){
  int argc=0;LPWSTR* argv=CommandLineToArgvW(GetCommandLineW(),&argc);if(argv&&argc>=3&&(wcscmp(argv[1],L"--encrypt")==0||wcscmp(argv[1],L"--decrypt")==0)){gArgDecrypt=wcscmp(argv[1],L"--decrypt")==0;gArgPath=argv[2];}if(argv)LocalFree(argv);
  INITCOMMONCONTROLSEX ic{sizeof(ic),ICC_STANDARD_CLASSES};InitCommonControlsEx(&ic);
- WNDCLASSW wc{};wc.lpfnWndProc=proc;wc.hInstance=inst;wc.hCursor=LoadCursor(nullptr,IDC_ARROW);wc.hIcon=LoadIcon(nullptr,IDI_APPLICATION);wc.hbrBackground=(HBRUSH)(COLOR_BTNFACE+1);wc.lpszClassName=L"ZHCryptorWindow";RegisterClassW(&wc);
+ WNDCLASSW wc{};wc.lpfnWndProc=proc;wc.hInstance=inst;wc.hCursor=LoadCursor(nullptr,IDC_ARROW);wc.hIcon=LoadIconW(inst,MAKEINTRESOURCEW(101));wc.hbrBackground=(HBRUSH)(COLOR_BTNFACE+1);wc.lpszClassName=L"ZHCryptorWindow";RegisterClassW(&wc);
  HWND h=CreateWindowExW(WS_EX_APPWINDOW,wc.lpszClassName,L"ZH Cryptor",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,CW_USEDEFAULT,CW_USEDEFAULT,535,445,nullptr,nullptr,inst,nullptr);if(!h)return 1;
  ShowWindow(h,show);UpdateWindow(h);MSG msg;while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}return (int)msg.wParam;
 }
