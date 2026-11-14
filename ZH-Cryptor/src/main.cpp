@@ -198,9 +198,9 @@ static bool shellMenu(bool enable,std::wstring& err){
  wchar_t exe[MAX_PATH]{};if(!GetModuleFileNameW(nullptr,exe,MAX_PATH)){err=L"Не удалось определить путь программы.";return false;}
  if(!registerZhcAssociation()){err=L"Не удалось зарегистрировать значок файлов .zhc.";return false;}
  for(int i=0;i<4;i++){HKEY h=nullptr;LONG s=RegCreateKeyExW(HKEY_CURRENT_USER,keys[i],0,nullptr,0,KEY_WRITE,nullptr,&h,nullptr);if(s!=ERROR_SUCCESS){err=L"Не удалось добавить меню Проводника.";return false;}
-  const wchar_t* label=(i%2==0)?L"Зашифровать копию — ZH Cryptor":L"Расшифровать копию — ZH Cryptor";RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)label,(DWORD)((wcslen(label)+1)*sizeof(wchar_t)));RegCloseKey(h);
+  const wchar_t* label=(i%2==0)?L"Зашифровать копию — ZH Cryptor":L"Расшифровать копию — ZH Cryptor";LONG wr=RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)label,(DWORD)((wcslen(label)+1)*sizeof(wchar_t)));RegCloseKey(h);if(wr!=ERROR_SUCCESS){err=L"Не удалось записать название пункта Проводника.";for(auto k:keys)RegDeleteTreeW(HKEY_CURRENT_USER,k);return false;}
   std::wstring cmdkey=std::wstring(keys[i])+L"\\command";if(RegCreateKeyExW(HKEY_CURRENT_USER,cmdkey.c_str(),0,nullptr,0,KEY_WRITE,nullptr,&h,nullptr)!=ERROR_SUCCESS){err=L"Не удалось настроить команду меню.";return false;}
-  std::wstring cmd=L"\""+std::wstring(exe)+L"\" "+((i%2==0)?L"--encrypt ":L"--decrypt ")+L"\"%1\"";RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)cmd.c_str(),(DWORD)((cmd.size()+1)*sizeof(wchar_t)));RegCloseKey(h);
+  std::wstring cmd=L"\""+std::wstring(exe)+L"\" "+((i%2==0)?L"--encrypt ":L"--decrypt ")+L"\"%1\"";wr=RegSetValueExW(h,nullptr,0,REG_SZ,(const BYTE*)cmd.c_str(),(DWORD)((cmd.size()+1)*sizeof(wchar_t)));RegCloseKey(h);if(wr!=ERROR_SUCCESS){err=L"Не удалось записать команду пункта Проводника.";for(auto k:keys)RegDeleteTreeW(HKEY_CURRENT_USER,k);return false;}
  }return true;
 }
 
@@ -229,9 +229,7 @@ static bool setFolderLockIcon(const fs::path& folder){
  if(!meta){fs::remove(ico);return false;}
  meta<<"; ZHCRYPTOR_FOLDER_LOCK\n; ORIGINAL_FOLDER_ATTRS="<<original<<"\n[.ShellClassInfo]\nIconFile=.zhcryptor.ico\nIconIndex=0\n";meta.close();
  if(!meta){fs::remove(ini);fs::remove(ico);return false;}
- SetFileAttributesW(ico.c_str(),FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM);
- SetFileAttributesW(ini.c_str(),FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM);
- SetFileAttributesW(folder.c_str(),original|FILE_ATTRIBUTE_SYSTEM);
+ if(!SetFileAttributesW(ico.c_str(),FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM)||!SetFileAttributesW(ini.c_str(),FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM)||!SetFileAttributesW(folder.c_str(),original|FILE_ATTRIBUTE_SYSTEM)){SetFileAttributesW(ini.c_str(),FILE_ATTRIBUTE_NORMAL);SetFileAttributesW(ico.c_str(),FILE_ATTRIBUTE_NORMAL);DeleteFileW(ini.c_str());DeleteFileW(ico.c_str());SetFileAttributesW(folder.c_str(),original);return false;}
  SHChangeNotify(SHCNE_ATTRIBUTES|SHCNE_UPDATEITEM,SHCNF_PATH,folder.c_str(),nullptr);return true;
 }
 static void removeFolderLockIcon(const fs::path& folder){
