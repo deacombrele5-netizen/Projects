@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cwchar>
 #include <sstream>
+#include <iterator>
 
 #pragma comment(lib,"bcrypt.lib")
 #pragma comment(lib,"comctl32.lib")
@@ -107,9 +108,9 @@ static bool setFolderLockIcon(const fs::path& folder){
  HMODULE mod=GetModuleHandleW(nullptr);HRSRC res=FindResourceW(mod,MAKEINTRESOURCEW(102),RT_RCDATA);if(!res)return false;
  HGLOBAL loaded=LoadResource(mod,res);DWORD bytes=SizeofResource(mod,res);const void* raw=LockResource(loaded);if(!raw||!bytes)return false;
  fs::path ini=folder/L"desktop.ini",ico=folder/L".zhcryptor.ico";
- if(fs::exists(ini)){std::ifstream old(ini,std::ios::binary);std::string txt((std::istreambuf_iterator<char>(old)),{});if(txt.find("ZHCRYPTOR_FOLDER_LOCK")==std::string::npos)return false;}
- else if(fs::exists(ico))return false;
  DWORD original=GetFileAttributesW(folder.c_str());if(original==INVALID_FILE_ATTRIBUTES)return false;
+ if(fs::exists(ini)){std::ifstream old(ini,std::ios::binary);std::string txt((std::istreambuf_iterator<char>(old)),{});if(txt.find("ZHCRYPTOR_FOLDER_LOCK")==std::string::npos)return false;auto at=txt.find("ORIGINAL_FOLDER_ATTRS=");if(at!=std::string::npos){at+=22;try{original=(DWORD)std::stoul(txt.substr(at));}catch(...){}}}
+ else if(fs::exists(ico))return false;
  fs::path tmp=ico;tmp+=L".tmp";
  {std::ofstream out(tmp,std::ios::binary|std::ios::trunc);if(!out)return false;out.write((const char*)raw,bytes);out.flush();if(!out){out.close();fs::remove(tmp);return false;}}
  if(!MoveFileExW(tmp.c_str(),ico.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){fs::remove(tmp);return false;}
@@ -151,7 +152,7 @@ static void run(bool dec){
   else if(fs::is_directory(p)){for(auto it=fs::recursive_directory_iterator(p,fs::directory_options::skip_permission_denied);it!=fs::recursive_directory_iterator();++it)if(it->is_regular_file()&&(dec?it->path().extension()==L".zhc":it->path().extension()!=L".zhc"))files.push_back(it->path());}
   else{last=L"Путь не найден.";bad++;}
   for(const auto& f:files){std::wstring out,err;bool ok=dec?decryptFile(f,pass,out,err):encryptFile(f,pass,out,err);if(ok){good++;last=out;}else{bad++;last=err;}}
-  if(good>0){fs::path folder=fs::is_directory(p)?p:p.parent_path();if(dec){if(!hasEncrypted(folder))removeFolderLockIcon(folder);}else setFolderLockIcon(folder);}
+  if(good>0&&fs::is_directory(p)){if(dec){if(!hasEncrypted(p))removeFolderLockIcon(p);}else setFolderLockIcon(p);}
  }catch(...){bad++;last=L"Ошибка доступа к папке или файлам.";}
  SecureZeroMemory(pass.data(),pass.size()*sizeof(wchar_t));SecureZeroMemory(confirm.data(),confirm.size()*sizeof(wchar_t));
  status(tr(L"Успешно: ",L"Done: ")+std::to_wstring(good)+tr(L"; ошибок: ",L"; errors: ")+std::to_wstring(bad)+(last.empty()?L"":L" — "+last));
