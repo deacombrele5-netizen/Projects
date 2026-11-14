@@ -74,7 +74,7 @@ static bool createTempPath(const fs::path& dst,fs::path& tmp){
   std::wstring suffix=L".zhctmp.";
   for(BYTE b:rnd){suffix.push_back(hex[b>>4]);suffix.push_back(hex[b&15]);}
   SecureZeroMemory(rnd,sizeof(rnd));tmp=dst;tmp+=suffix;
-  HANDLE h=CreateFileW(tmp.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_TEMPORARY,nullptr);
+  HANDLE h=CreateFileW(tmp.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
   if(h!=INVALID_HANDLE_VALUE){CloseHandle(h);return true;}
   if(GetLastError()!=ERROR_FILE_EXISTS&&GetLastError()!=ERROR_ALREADY_EXISTS)return false;
  }
